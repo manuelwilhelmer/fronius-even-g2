@@ -24,15 +24,31 @@ The mobile companion app (opened via a browser on your smartphone) serves as the
 - **Persistent Login**: Credentials can be saved locally (`localStorage`) for quick reconnections.
 
 ### 🕶️ HUD Application (Even Realities G2)
-Once connected, your smartphone streams live data to the glasses every ~3.5 seconds. The G2 HUD will present a clean, minimalist layout directly in your field of view:
+Once connected, your smartphone streams live data to the glasses every ~3.5 seconds. The G2 HUD features a **3-page layout** that you can navigate by using vertical swipe gestures on the touch panels of your glasses.
 
-- **System Name**: The actual name of your PV System (e.g., "Home Solar") is displayed as the title.
+#### Page 1: Live Data ⚡️
+Presents a clean, real-time snapshot of the current power flows:
+- **System Name**: The actual name of your PV System (e.g., "Home Solar").
 - **PV Gen**: Real-time solar production formatted automatically (e.g., `1.25 kW` or `850 W`).
 - **Load**: Current household power consumption.
 - **Grid**: Live grid interaction, shown as `+` for drawing power (import) and `-` for feeding power (export).
-- **Battery** (if applicable): Displays the real-time charge/discharge power alongside the exact State of Charge (SOC) percentage. 
-  - *Example (Discharging):* `Battery: -500 W (45%)`
-  - *Example (Charging):* `Battery: +1.25 kW (85%)`
+- **Battery** (if applicable): Displays the exact real-time charge/discharge power alongside the exact State of Charge (SOC) percentage. 
+  - *Example (Discharging to load):* `Battery: -500 W (45%)`
+  - *Example (Charging from PV):* `Battery: +1.25 kW (85%)`
+
+#### Page 2: Today's Production ☀️
+A daily summary of your energy generation and self-consumption:
+- **Production**: Total energy produced today (kWh).
+- **Self-Consumption rate**: Percentage of generated solar energy consumed directly by the household (%).
+- **Self-Consumption**: Total generated solar energy consumed directly today (kWh).
+- **Grid Feed-In**: Total solar energy exported to the power grid today (kWh).
+
+#### Page 3: Today's Consumption 🏠
+A daily summary of your energy usage and grid independence:
+- **Consumption**: Total energy consumed by the household today (kWh).
+- **Self-Sufficiency**: Percentage of your consumption that was covered by your PV system / battery (%).
+- **Self-Supplied**: Amount of your consumption covered by your own system (kWh).
+- **Grid Import**: Amount of energy pulled from the grid today (kWh).
 
 ## Technical Stack
 - **Frontend**: React 19, TypeScript, Vite

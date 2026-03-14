@@ -7,12 +7,20 @@ import {
 } from '@evenrealities/even_hub_sdk';
 
 let pollingInterval: number | null = null;
+let currentPage = 0; // 0 = Live, 1 = Daily Prod, 2 = Daily Cons
+let renderLive = 'Connected to Solar.web!\nWaiting for live data...';
+let renderDaily = 'Connected to Solar.web!\nWaiting for daily production...';
+let renderDailyCon = 'Connected to Solar.web!\nWaiting for daily consumption...';
+let globalBridge: EvenAppBridge | null = null;
+let globalUpdateStatus: ((s: string) => void) | null = null;
+
 const CONTAINER_ID = 1;
 const SW_BASE_URL = "https://swqapi.solarweb.com";
 const DEFAULT_ACCESSKEY_ID = "FKIAB4CDA71C0763413DA942DC756742318B";
 const DEFAULT_ACCESSKEY_VALUE = "67315e19-6805-479e-994d-7193ee5f6125";
 
 export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
+  globalUpdateStatus = updateStatus;
   try {
     updateStatus('Authenticating with Solar.web...');
     const authHeaders = await loginSolarWeb(email, pass);
@@ -40,12 +48,40 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
             paddingLength: 4,
             containerID: CONTAINER_ID,
             containerName: 'fronius-data',
-            content: 'Connected to Solar.web!\nWaiting for data...',
+            content: renderLive,
             isEventCapture: 1,
           })
         ]
       })
     );
+
+    globalBridge = bridge;
+
+    // Listen for gestures to switch pages
+    let lastPageTurn = 0;
+    bridge.onEvenHubEvent((event: any) => {
+      console.log('EvenHubEvent received:', JSON.stringify(event));
+      
+      // The event typically contains a textEvent or listEvent property with an eventType
+      // such as 1 (SCROLL_TOP_EVENT) or 2 (SCROLL_BOTTOM_EVENT) or their string equivalents.
+      const eventType = event.textEvent?.eventType ?? event.listEvent?.eventType ?? event.sysEvent?.eventType;
+      
+      const evtStr = String(eventType).toUpperCase();
+      const isScroll = evtStr === '1' || evtStr === '2' || evtStr.includes('SCROLL');
+
+      if (isScroll) {
+        const now = Date.now();
+        if (now - lastPageTurn > 500) { // 500ms debounce
+          if (evtStr === '1' || evtStr.includes('SCROLL_TOP')) {
+            currentPage = (currentPage - 1 + 3) % 3; // Go back
+          } else {
+            currentPage = (currentPage + 1) % 3; // Go forward (SCROLL_BOTTOM or others)
+          }
+          updateHUD().catch(console.error);
+          lastPageTurn = now;
+        }
+      }
+    });
 
     if (pollingInterval) window.clearInterval(pollingInterval);
     
@@ -95,6 +131,24 @@ async function getPvSystemInfo(authHeaders: HeadersInit): Promise<{ id: string, 
     return { id: sys.pvSystemId, name: sys.name || 'Fronius Solar.web' };
   }
   return null;
+}
+
+async function updateHUD() {
+  if (!globalBridge) return;
+  const content = currentPage === 0 ? renderLive : (currentPage === 1 ? renderDaily : renderDailyCon);
+  
+  await globalBridge.textContainerUpgrade(new TextContainerUpgrade({
+    containerID: CONTAINER_ID,
+    containerName: 'fronius-data',
+    contentOffset: 0,
+    contentLength: 1000, 
+    content: content,
+  }));
+  
+  if (globalUpdateStatus) {
+    const pageName = currentPage === 0 ? 'Live' : (currentPage === 1 ? 'Prod' : 'Cons');
+    globalUpdateStatus(`Updated: ${new Date().toLocaleTimeString()} (Page: ${pageName})`);
+  }
 }
 
 async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders: HeadersInit, bridge: EvenAppBridge, updateStatus: (s: string) => void) {
@@ -160,19 +214,72 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
         const signStr = discharging ? '-' : '+';
         renderText += `Battery: ${signStr}${pwrStr} (${socStr})\n\n`;
       } else {
-         renderText += `Battery: ${socStr}\n\n`;
+        renderText += `Battery: ${socStr}\n\n`;
       }
     }
     
-    await bridge.textContainerUpgrade(new TextContainerUpgrade({
-      containerID: CONTAINER_ID,
-      containerName: 'fronius-data',
-      contentOffset: 0,
-      contentLength: 1000, 
-      content: renderText,
-    }));
+    renderLive = renderText;
+
+    // Fetch Daily AggrData
+    try {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      const aggrUrl = `${SW_BASE_URL}/pvsystems/${pvSystemId}/aggrdata?From=${dateStr}&To=${dateStr}`;
+      const aggrRes = await fetch(aggrUrl, { headers: authHeaders });
       
-    updateStatus(`Last updated: ${new Date().toLocaleTimeString()}`);
+      if (aggrRes.ok) {
+        const aggrData = await aggrRes.json();
+        const aggrChannels = aggrData?.data?.[0]?.channels || [];
+        
+        let prodTotal = 0;
+        let selfConsEnergy = 0;
+        let feedIn = 0;
+
+        let consTotal = 0;
+        let purchased = 0;
+
+        for (const ch of aggrChannels) {
+          if (ch.channelName === 'EnergyProductionTotal') prodTotal = Number(ch.value) || 0;
+          if (ch.channelName === 'EnergySelfConsumptionTotal') selfConsEnergy = Number(ch.value) || 0;
+          if (ch.channelName === 'EnergyFeedIn') feedIn = Number(ch.value) || 0;
+          
+          if (ch.channelName === 'EnergyConsumptionTotal') consTotal = Number(ch.value) || 0;
+          if (ch.channelName === 'EnergyPurchased') purchased = Number(ch.value) || 0;
+        }
+
+        const selfConsRate = prodTotal > 0 ? (selfConsEnergy / prodTotal) * 100 : 0;
+        
+        // Self-Supplied = Total Consumption - Grid Import
+        const selfSupplied = Math.max(0, consTotal - purchased);
+        const selfSuffRate = consTotal > 0 ? (selfSupplied / consTotal) * 100 : 0;
+
+        const formatEnergy = (wh: number) => {
+          return `${(wh / 1000).toFixed(2)} kWh`;
+        };
+
+        renderDaily = 
+          `Today's production\n\n` +
+          `Production: ${formatEnergy(prodTotal)}\n` +
+          `Self-Consumption rate: ${selfConsRate.toFixed(0)}%\n` +
+          `Self-Consumption: ${formatEnergy(selfConsEnergy)}\n` +
+          `Grid Feed-In: ${formatEnergy(feedIn)}\n`;
+
+        renderDailyCon = 
+          `Today's consumption\n\n` +
+          `Consumption: ${formatEnergy(consTotal)}\n` +
+          `Self-Sufficiency: ${selfSuffRate.toFixed(0)}%\n` +
+          `Self-Supplied: ${formatEnergy(selfSupplied)}\n` +
+          `Grid Import: ${formatEnergy(purchased)}\n`;
+      }
+    } catch (e) {
+      console.error("Failed to fetch daily aggrdata", e);
+    }
+    
+    await updateHUD();
     
   } catch (err: any) {
     console.error('Solar.web Poll Error:', err);
