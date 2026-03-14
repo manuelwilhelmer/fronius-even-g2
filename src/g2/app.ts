@@ -7,7 +7,7 @@ import {
 } from '@evenrealities/even_hub_sdk';
 
 let pollingInterval: number | null = null;
-let currentPage = 0; // 0 = Live, 1 = Daily Prod, 2 = Daily Cons, 3 = Monthly Prod
+let currentPage = 0; // 0 = Live, 1 = Daily Prod, 2 = Daily Cons, 3 = Monthly Prod, 4 = Monthly Cons
 let currentMonthOffset = 0; // 0 = Current month, 1 = Last month, etc. (up to 11)
 let isMonthMenuOpen = false;
 let menuMonthOffset = 0;
@@ -15,6 +15,7 @@ let renderLive = 'Connected to Solar.web!\nWaiting for live data...';
 let renderDaily = 'Connected to Solar.web!\nWaiting for daily production...';
 let renderDailyCon = 'Connected to Solar.web!\nWaiting for daily consumption...';
 let renderMonthly = 'Connected to Solar.web!\nWaiting for monthly production...';
+let renderMonthlyCon = 'Connected to Solar.web!\nWaiting for monthly consumption...';
 let globalBridge: EvenAppBridge | null = null;
 let globalUpdateStatus: ((s: string) => void) | null = null;
 
@@ -77,7 +78,7 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
       if (isScroll && now - lastPageTurn > 500) { // 500ms debounce
         const isUp = evtStr === '1' || evtStr.includes('SCROLL_TOP');
         
-        if (currentPage === 3 && isMonthMenuOpen) {
+        if ((currentPage === 3 || currentPage === 4) && isMonthMenuOpen) {
            // We are in the popup menu - scroll through months
            if (isUp) {
               menuMonthOffset = Math.max(0, menuMonthOffset - 1);
@@ -88,16 +89,16 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
         } else {
            // Normal Page navigation
            if (isUp) {
-             currentPage = (currentPage - 1 + 4) % 4; // Go back
+             currentPage = (currentPage - 1 + 5) % 5; // Go back
            } else {
-             currentPage = (currentPage + 1) % 4; // Go forward
+             currentPage = (currentPage + 1) % 5; // Go forward
            }
            updateHUD().catch(console.error);
         }
         lastPageTurn = now;
       }
       
-      if (isDoubleTap && currentPage === 3 && now - lastPageTurn > 500) {
+      if (isDoubleTap && (currentPage === 3 || currentPage === 4) && now - lastPageTurn > 500) {
         if (!isMonthMenuOpen) {
            // Open the menu
            isMonthMenuOpen = true;
@@ -174,7 +175,7 @@ async function updateHUD() {
 
   if (currentPage === 1) content = renderDaily;
   if (currentPage === 2) content = renderDailyCon;
-  if (currentPage === 3) {
+  if (currentPage === 3 || currentPage === 4) {
      if (isMonthMenuOpen) {
        // Generate the text menu instead of the data
        const today = new Date();
@@ -195,7 +196,7 @@ async function updateHUD() {
        }
        content = menuStr;
      } else {
-       content = renderMonthly;
+       content = currentPage === 3 ? renderMonthly : renderMonthlyCon;
      }
   }
   
@@ -208,7 +209,7 @@ async function updateHUD() {
   }));
   
   if (globalUpdateStatus) {
-    const pageName = ['Live', 'Prod', 'Cons', 'Month'][currentPage];
+    const pageName = ['Live', 'Prod', 'Cons', 'M-Prod', 'M-Cons'][currentPage];
     globalUpdateStatus(`Updated: ${new Date().toLocaleTimeString()} (Page: ${pageName})`);
   }
 }
@@ -366,6 +367,9 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
         let mSelfConsEnergy = 0;
         let mFeedIn = 0;
 
+        let mConsTotal = 0;
+        let mPurchased = 0;
+
         if (aggrData?.data && Array.isArray(aggrData.data)) {
           for (const dayData of aggrData.data) {
             const aggrChannels = dayData.channels || [];
@@ -373,11 +377,18 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
               if (ch.channelName === 'EnergyProductionTotal') mProdTotal += Number(ch.value) || 0;
               if (ch.channelName === 'EnergySelfConsumptionTotal') mSelfConsEnergy += Number(ch.value) || 0;
               if (ch.channelName === 'EnergyFeedIn') mFeedIn += Number(ch.value) || 0;
+              
+              if (ch.channelName === 'EnergyConsumptionTotal') mConsTotal += Number(ch.value) || 0;
+              if (ch.channelName === 'EnergyPurchased') mPurchased += Number(ch.value) || 0;
             }
           }
         }
 
         const mSelfConsRate = mProdTotal > 0 ? (mSelfConsEnergy / mProdTotal) * 100 : 0;
+        
+        // Self-Supplied = Total Consumption - Grid Import
+        const mSelfSupplied = Math.max(0, mConsTotal - mPurchased);
+        const mSelfSuffRate = mConsTotal > 0 ? (mSelfSupplied / mConsTotal) * 100 : 0;
 
         const formatEnergy = (wh: number) => {
           return `${(wh / 1000).toFixed(2)} kWh`;
@@ -391,6 +402,13 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
           `Self-Consumption rate: ${mSelfConsRate.toFixed(0)}%\n` +
           `Self-Consumption: ${formatEnergy(mSelfConsEnergy)}\n` +
           `Grid Feed-In: ${formatEnergy(mFeedIn)}\n`;
+
+        renderMonthlyCon = 
+          `${monthName} consumption\n\n` +
+          `Consumption: ${formatEnergy(mConsTotal)}\n` +
+          `Self-Sufficiency: ${mSelfSuffRate.toFixed(0)}%\n` +
+          `Self-Supplied: ${formatEnergy(mSelfSupplied)}\n` +
+          `Grid Import: ${formatEnergy(mPurchased)}\n`;
       }
     } catch (e) {
       console.error("Failed to fetch monthly aggrdata", e);

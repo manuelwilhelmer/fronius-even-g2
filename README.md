@@ -24,7 +24,7 @@ The mobile companion app (opened via a browser on your smartphone) serves as the
 - **Persistent Login**: Credentials can be saved locally (`localStorage`) for quick reconnections.
 
 ### 🕶️ HUD Application (Even Realities G2)
-Once connected, your smartphone streams live data to the glasses every ~3.5 seconds. The G2 HUD features a **3-page layout** that you can navigate by using vertical swipe gestures on the touch panels of your glasses.
+Once connected, your smartphone streams live data to the glasses every ~3.5 seconds. The G2 HUD features a **5-page layout** that you can navigate by using vertical swipe gestures on the touch panels of your glasses.
 
 #### Page 1: Live Data ⚡️
 Presents a clean, real-time snapshot of the current power flows:
@@ -51,10 +51,15 @@ A daily summary of your energy usage and grid independence:
 - **Grid Import**: Amount of energy pulled from the grid today (kWh).
 
 #### Page 4: Monthly Production 📅
-A comprehensive monthly summary. This page features an interactive selection menu:
+A comprehensive monthly summary of production data. Features an interactive selection menu:
 - **Double-Tap**: Double tap the glasses touch panel to open the interactive **Month Selection Menu**.
 - **Scroll**: Swipe up or down to scroll through a list of the last 12 months.
 - **Confirm**: Double tap again on your desired month to close the menu and load the newly selected month's production data.
+
+#### Page 5: Monthly Consumption 🗓️
+A comprehensive monthly summary of consumption and grid independence. Features the same interactive selection menu as Page 4:
+- Identical layout and gesture commands as Page 4 (Double-tap to open the selection menu, scroll, confirm).
+- Displays total Consumption, Self-Sufficiency, Self-Supplied, and Grid Import for the selected month.
 
 ## Technical Stack
 - **Frontend**: React 19, TypeScript, Vite
