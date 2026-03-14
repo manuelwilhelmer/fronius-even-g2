@@ -1,4 +1,4 @@
-# Fronius Solar.web to Even Realities G2 HUD
+# Fronius Solar.web to Even Realities G2
 
 This project bridges **Fronius Solar.web** PV system data directly into the **Even Realities G2** smart glasses. It provides a real-time, hands-free heads-up display (HUD) of your solar power production, grid usage, load, and battery status.
 
