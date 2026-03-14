@@ -1,0 +1,12 @@
+{
+  "name": "Fronius Solar",
+  "name_zh": "Fronius Solar",
+  "id": "fronius",
+  "version": "1.0.0",
+  "permissions": [
+    "LOCATION_PERMISSION",
+    "NETWORK_PERMISSION",
+    "BLUETOOTH_PERMISSION"
+  ],
+  "entry": "index.html"
+}
