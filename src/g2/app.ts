@@ -361,16 +361,20 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
       
       if (aggrResMonth.ok) {
         const aggrData = await aggrResMonth.json();
-        const aggrChannels = aggrData?.data?.[0]?.channels || [];
         
         let mProdTotal = 0;
         let mSelfConsEnergy = 0;
         let mFeedIn = 0;
 
-        for (const ch of aggrChannels) {
-          if (ch.channelName === 'EnergyProductionTotal') mProdTotal = Number(ch.value) || 0;
-          if (ch.channelName === 'EnergySelfConsumptionTotal') mSelfConsEnergy = Number(ch.value) || 0;
-          if (ch.channelName === 'EnergyFeedIn') mFeedIn = Number(ch.value) || 0;
+        if (aggrData?.data && Array.isArray(aggrData.data)) {
+          for (const dayData of aggrData.data) {
+            const aggrChannels = dayData.channels || [];
+            for (const ch of aggrChannels) {
+              if (ch.channelName === 'EnergyProductionTotal') mProdTotal += Number(ch.value) || 0;
+              if (ch.channelName === 'EnergySelfConsumptionTotal') mSelfConsEnergy += Number(ch.value) || 0;
+              if (ch.channelName === 'EnergyFeedIn') mFeedIn += Number(ch.value) || 0;
+            }
+          }
         }
 
         const mSelfConsRate = mProdTotal > 0 ? (mSelfConsEnergy / mProdTotal) * 100 : 0;
