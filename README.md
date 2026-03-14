@@ -7,8 +7,8 @@ This project bridges **Fronius Solar.web** PV system data directly into the **Ev
 Before using this application, you **must enable the Solar API** locally on your Fronius Inverter/Datamanager. 
 
 1. Connect to your Fronius inverter's local web interface.
-2. Go to **Communication** (Kommunikation) -> **Solar API**.
-3. Enable **Communication via Solar API** (Kommunikation über Solar API aktivieren).
+2. Go to **Communication** -> **Solar API**.
+3. Enable **Communication via Solar API**.
 4. Save the settings.
 
 *Note: The app interfaces with the Solar.web Cloud via an internal JWT API, but the local Solar API setting is often required for the datalogger to push comprehensive high-frequency flow data to the cloud in the first place.*
@@ -51,6 +51,6 @@ Once connected, your smartphone streams live data to the glasses every ~3.5 seco
    npm run dev
    ```
 3. Open the provided `localhost` or local network URL on your smartphone.
-4. Input your Solar.web credentials and click **Log In** (Anmelden).
+4. Input your Solar.web credentials and click **Log In**.
 
 *Ensure your smartphone is actively paired via Bluetooth to the Even Realities G2 glasses via the Even App before initiating the connection.*
