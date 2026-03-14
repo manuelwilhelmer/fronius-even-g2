@@ -150,15 +150,15 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
       `Grid: ${gridStr}\n\n`;
       
     if (battSoc !== null) {
-      const socStr = `${battSoc.toFixed(1)}%`;
+      const socStr = `${battSoc.toFixed(0)}%`;
       if (battPower !== null) {
         // PowerBattCharge: If positive, it's discharging (Out) to the house. If negative, it's charging (In) from PV.
-        // Or vice versa depending on exact Fronius firmware, but generally we show absolute value with text.
-        // From our nighttime test, 306W is positive when house draws 300W and PV is 0. So positive == Out.
+        // From our nighttime test, 306W is positive when house draws 300W and PV is 0. So positive == discharging.
+        // User requested: Out -> '-', In -> '+'
         const discharging = battPower > 0;
         const pwrStr = formatPower(Math.abs(battPower));
-        const statusStr = discharging ? `Out: ${pwrStr}` : `In: ${pwrStr}`;
-        renderText += `Battery: ${socStr} (${statusStr})\n\n`;
+        const signStr = discharging ? '-' : '+';
+        renderText += `Battery: ${signStr}${pwrStr} (${socStr})\n\n`;
       } else {
          renderText += `Battery: ${socStr}\n\n`;
       }
