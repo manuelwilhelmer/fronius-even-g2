@@ -2,38 +2,40 @@ import { useState, useEffect } from 'react';
 import { initEvenG2App } from './g2/app';
 
 export default function App() {
-  const [ipAddress, setIpAddress] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [saved, setSaved] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('Waiting to connect...');
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const savedIp = localStorage.getItem('fronius_ip');
-    if (savedIp) {
-      setIpAddress(savedIp);
-    }
+    const savedEmail = localStorage.getItem('solarweb_email');
+    const savedPassword = localStorage.getItem('solarweb_password');
+    if (savedEmail) setEmail(savedEmail);
+    if (savedPassword) setPassword(savedPassword);
   }, []);
 
   const handleSave = () => {
-    localStorage.setItem('fronius_ip', ipAddress);
+    localStorage.setItem('solarweb_email', email);
+    localStorage.setItem('solarweb_password', password);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const handleConnect = async () => {
-    if (!ipAddress) {
-      setConnectionStatus('Please enter an IP address first');
+    if (!email || !password) {
+      setConnectionStatus('Please enter an email and password first');
       return;
     }
     
     setConnectionStatus('Connecting to Even Hub Bridge...');
     try {
-      await initEvenG2App(ipAddress, setConnectionStatus);
+      await initEvenG2App(email, password, setConnectionStatus);
       setIsConnected(true);
-      setConnectionStatus('Connected via Bluetooth proxy to Even G2.');
+      setConnectionStatus('Connected to Even G2 & Solar.web API.');
     } catch (err) {
       console.error(err);
-      setConnectionStatus('Failed to connect. Check bridge status or try again.');
+      setConnectionStatus('Failed to connect. Check bridge status or credentials.');
       setIsConnected(false);
     }
   };
@@ -44,28 +46,44 @@ export default function App() {
         <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
           Fronius Even G2
         </h1>
-        <p className="text-slate-400 text-sm">Monitor your solar production directly on your smart glasses.</p>
+        <p className="text-slate-400 text-sm">Monitor your solar production directly on your smart glasses via Solar.web.</p>
       </div>
 
       <div className="w-full space-y-4 text-left">
-        <label htmlFor="ip_address" className="block text-sm font-medium text-slate-300">
-          Inverter IP Address
-        </label>
-        <input
-          type="text"
-          id="ip_address"
-          value={ipAddress}
-          onChange={(e) => setIpAddress(e.target.value)}
-          placeholder="e.g. 192.168.1.150"
-          className="w-full px-4 py-3 bg-slate-800/80 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono"
-        />
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-1">
+            Solar.web Email
+          </label>
+          <input
+            type="email"
+            id="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="e.g. hello@example.com"
+            className="w-full px-4 py-3 bg-slate-800/80 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono"
+          />
+        </div>
+
+        <div>
+           <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-1">
+            Solar.web Password
+          </label>
+          <input
+            type="password"
+            id="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            className="w-full px-4 py-3 bg-slate-800/80 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono"
+          />
+        </div>
         
         <div className="flex space-x-3 pt-2">
           <button
             onClick={handleSave}
             className="flex-1 py-3 px-4 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors focus:ring-2 focus:ring-slate-500 outline-none"
           >
-            {saved ? 'Saved!' : 'Save IP'}
+            {saved ? 'Saved!' : 'Save Login'}
           </button>
           <button
             onClick={handleConnect}

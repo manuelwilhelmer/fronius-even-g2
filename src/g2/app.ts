@@ -6,18 +6,26 @@ import {
   CreateStartUpPageContainer
 } from '@evenrealities/even_hub_sdk';
 
-// Let's create a polling interval reference so we can clear it if needed
 let pollingInterval: number | null = null;
 const CONTAINER_ID = 1;
+const SW_BASE_URL = "https://swqapi.solarweb.com";
+const DEFAULT_ACCESSKEY_ID = "FKIAB4CDA71C0763413DA942DC756742318B";
+const DEFAULT_ACCESSKEY_VALUE = "67315e19-6805-479e-994d-7193ee5f6125";
 
-export async function initEvenG2App(inverterIp: string, updateStatus: (s: string) => void) {
+export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
   try {
-    // We wait 10 seconds max for the Bridge as per the usual timeout wrap
-    const bridge = await withTimeout(waitForEvenAppBridge(), 10000);
+    updateStatus('Authenticating with Solar.web...');
+    const authHeaders = await loginSolarWeb(email, pass);
     
+    updateStatus('Finding PV System ID...');
+    const pvSystemId = await getPvSystemId(authHeaders);
+    if (!pvSystemId) {
+      throw new Error("No PV System found on this account.");
+    }
+
+    const bridge = await withTimeout(waitForEvenAppBridge(), 10000);
     updateStatus('Bridge acquired. Initializing glasses layout...');
     
-    // Build initial empty layout
     await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
         containerTotalNum: 1,
@@ -28,25 +36,23 @@ export async function initEvenG2App(inverterIp: string, updateStatus: (s: string
             width: 576,
             height: 288,
             borderWidth: 0,
-            borderColor: 0, // black/no color
+            borderColor: 0, 
             paddingLength: 4,
             containerID: CONTAINER_ID,
             containerName: 'fronius-data',
-            content: 'Connecting to Fronius PV...\nWaiting for data...',
+            content: 'Connected to Solar.web!\nWaiting for data...',
             isEventCapture: 1,
           })
         ]
       })
     );
 
-    // Initial setup complete, now let's set up polling to the local inverter API
-    if (pollingInterval) clearInterval(pollingInterval);
+    if (pollingInterval) window.clearInterval(pollingInterval);
     
-    // Start polling immediately and then every 3 seconds
-    await pollFronius(inverterIp, bridge, updateStatus);
+    await pollFronius(pvSystemId, authHeaders, bridge, updateStatus);
     pollingInterval = window.setInterval(() => {
-      pollFronius(inverterIp, bridge, updateStatus);
-    }, 3000);
+      pollFronius(pvSystemId, authHeaders, bridge, updateStatus);
+    }, 3500);
 
   } catch (error) {
     console.error('Failed to init Even G2:', error);
@@ -54,36 +60,86 @@ export async function initEvenG2App(inverterIp: string, updateStatus: (s: string
   }
 }
 
-async function pollFronius(ip: string, bridge: EvenAppBridge, updateStatus: (s: string) => void) {
+async function loginSolarWeb(userId: string, password: string): Promise<HeadersInit> {
+  const headers = {
+    "Content-Type": "application/json-patch+json",
+    "AccessKeyId": DEFAULT_ACCESSKEY_ID,
+    "AccessKeyValue": DEFAULT_ACCESSKEY_VALUE,
+    "Accept": "application/json",
+  };
+
+  const response = await fetch(`${SW_BASE_URL}/iam/jwt`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ userId, password })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Authentication failed (${response.status})`);
+  }
+  
+  const tokenData = await response.json();
+  return {
+    ...headers,
+    "Authorization": `Bearer ${tokenData.jwtToken}`
+  };
+}
+
+async function getPvSystemId(authHeaders: HeadersInit): Promise<string | null> {
+  const response = await fetch(`${SW_BASE_URL}/pvsystems`, { headers: authHeaders });
+  if (!response.ok) throw new Error(`PV Systems failed (${response.status})`);
+  const data = await response.json();
+  if (data?.pvSystems && data.pvSystems.length > 0) {
+    return data.pvSystems[0].pvSystemId;
+  }
+  return null;
+}
+
+async function pollFronius(pvSystemId: string, authHeaders: HeadersInit, bridge: EvenAppBridge, updateStatus: (s: string) => void) {
   try {
-    const url = `http://${ip}/solar_api/v1/GetPowerFlowRealtimeData.fcgi`;
-    const response = await fetch(url);
+    const url = `${SW_BASE_URL}/pvsystems/${pvSystemId}/flowdata`;
+    const response = await fetch(url, { headers: authHeaders });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
-    const data = await response.json();
-    const site = data?.Body?.Data?.Site;
+    const resValue = await response.json();
+    const channels = resValue?.data?.channels;
     
-    if (!site) throw new Error("Invalid API response structure");
+    if (!channels || !Array.isArray(channels)) {
+        throw new Error("Invalid Solar.web flow channels structure.");
+    }
 
-    // site.P_PV: Solar generation (null if offline)
-    // site.P_Grid: + means drawing from grid, - means feeding to grid
-    // site.P_Load: + means consuming
-    // site.rel_Autonomy: Percentage
-    
-    const pvGen = site.P_PV || 0;
-    const grid = site.P_Grid || 0;
-    const load = site.P_Load || 0;
+    // Solar.web returns channels like:
+    // { channelName: 'Power', channelType: 'Power', unit: 'W', value: 1234 }
+    let pvGen = 0;
+    let grid = 0;
+    let load = 0;
+    let autonomy = 0;
+    let battSoc: number | null = null;
+
+    // Solar.web returns exact channelNames we can match reliably
+    for (const ch of channels) {
+      const name = ch.channelName;
+      if (name === 'PowerPV') pvGen = Number(ch.value) || 0;
+      if (name === 'PowerFeedIn') grid = Number(ch.value) || 0;
+      if (name === 'PowerLoad') load = Number(ch.value) || 0;
+      if (name === 'RateSelfSufficiency') autonomy = Number(ch.value) || 0;
+      if (name === 'BattSOC' && ch.value !== null) battSoc = Number(ch.value);
+    }
 
     const pvStr = pvGen ? `${pvGen.toFixed(0)} W` : '0 W';
-    const gridStr = grid > 0 ? `Draw: +${grid.toFixed(0)} W` : `Feed: ${grid.toFixed(0)} W`;
+    const gridStr = grid > 0 ? `Draw: +${grid.toFixed(0)} W` : `Feed: ${Math.abs(grid).toFixed(0)} W`;
     const loadStr = Math.abs(load).toFixed(0) + ' W';
 
-    const renderText = 
-      `Fronius Solar Power\n\n` + 
+    let renderText = 
+      `Fronius Solar.web\n\n` + 
       `PV Gen : ${pvStr}\n` + 
       `Grid   : ${gridStr}\n` + 
-      `Load   : ${loadStr}\n\n` + 
-      `Autonomy: ${site.rel_Autonomy || 0}%`;
+      `Load   : ${loadStr}\n\n`;
+      
+    if (battSoc !== null) {
+      renderText += `Battery: ${battSoc.toFixed(1)}%\n`;
+    }
+    renderText += (autonomy ? `Autonomy: ${autonomy.toFixed(0)}%` : `Online`);
     
     await bridge.textContainerUpgrade(new TextContainerUpgrade({
       containerID: CONTAINER_ID,
@@ -96,16 +152,15 @@ async function pollFronius(ip: string, bridge: EvenAppBridge, updateStatus: (s: 
     updateStatus(`Last updated: ${new Date().toLocaleTimeString()}`);
     
   } catch (err: any) {
-    console.error('Fronius Poll Error:', err);
-    updateStatus('Error polling Fronius: ' + err.message);
+    console.error('Solar.web Poll Error:', err);
+    updateStatus('Error polling Solar.web: ' + err.message);
     
-    // Optionally update the glasses with an error state (ignore if it fails)
     bridge.textContainerUpgrade(new TextContainerUpgrade({
       containerID: CONTAINER_ID,
       containerName: 'fronius-data',
       contentOffset: 0,
       contentLength: 1000, 
-      content: `Fronius API Error!\nCheck IP: ${ip}\n${err.message}`,
+      content: `Solar.web API Error!\n${err.message}`,
     })).catch(console.error);
   }
 }
