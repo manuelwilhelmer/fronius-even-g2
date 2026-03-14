@@ -18,7 +18,6 @@ Before using this application, you **must enable the Solar API** locally on your
 ### 📱 Mobile Application (React UI)
 The mobile companion app (opened via a browser on your smartphone) serves as the configuration and authentication bridge:
 - **Authentication**: Securely log in using your standard Fronius Solar.web Email and Password.
-- **Fronius Branding**: Designed following the official Fronius Corporate Identity (Red/White/Gray) with a high-resolution SVG logo and premium typography (Inter / Publico Headline fonts).
 - **Internationalization**: Full dual-language support for English (EN) and German (DE).
 - **Auto-Discovery**: Automatically fetches your primary PV System ID (`pvSystemId`) from your Solar.web account.
 - **Persistent Login**: Credentials can be saved locally (`localStorage`) for quick reconnections.
