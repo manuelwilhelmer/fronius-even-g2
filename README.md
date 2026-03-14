@@ -31,6 +31,7 @@ Presents a clean, real-time snapshot of the current power flows:
 - **PV Gen**: Real-time solar production formatted automatically (e.g., `1.25 kW` or `850 W`).
 - **Load**: Current household power consumption.
 - **Grid**: Live grid interaction, shown as `+` for drawing power (import) and `-` for feeding power (export).
+- **Wattpilot** (optional dynamically appearing): If your Fronius Wattpilot is actively drawing power to charge your EV, this line will dynamically appear with the live charging rate.
 - **Battery** (if applicable): Displays the exact real-time charge/discharge power alongside the exact State of Charge (SOC) percentage. 
   - *Example (Discharging to load):* `Battery: -500 W (45%)`
   - *Example (Charging from PV):* `Battery: +1.25 kW (85%)`
