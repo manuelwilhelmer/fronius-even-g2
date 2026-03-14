@@ -17,9 +17,9 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
     updateStatus('Authenticating with Solar.web...');
     const authHeaders = await loginSolarWeb(email, pass);
     
-    updateStatus('Finding PV System ID...');
-    const pvSystemId = await getPvSystemId(authHeaders);
-    if (!pvSystemId) {
+    updateStatus('Finding PV System...');
+    const pvSystem = await getPvSystemInfo(authHeaders);
+    if (!pvSystem) {
       throw new Error("No PV System found on this account.");
     }
 
@@ -49,9 +49,9 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
 
     if (pollingInterval) window.clearInterval(pollingInterval);
     
-    await pollFronius(pvSystemId, authHeaders, bridge, updateStatus);
+    await pollFronius(pvSystem.id, pvSystem.name, authHeaders, bridge, updateStatus);
     pollingInterval = window.setInterval(() => {
-      pollFronius(pvSystemId, authHeaders, bridge, updateStatus);
+      pollFronius(pvSystem.id, pvSystem.name, authHeaders, bridge, updateStatus);
     }, 3500);
 
   } catch (error) {
@@ -85,17 +85,19 @@ async function loginSolarWeb(userId: string, password: string): Promise<HeadersI
   };
 }
 
-async function getPvSystemId(authHeaders: HeadersInit): Promise<string | null> {
+async function getPvSystemInfo(authHeaders: HeadersInit): Promise<{ id: string, name: string } | null> {
   const response = await fetch(`${SW_BASE_URL}/pvsystems`, { headers: authHeaders });
   if (!response.ok) throw new Error(`PV Systems failed (${response.status})`);
   const data = await response.json();
   if (data?.pvSystems && data.pvSystems.length > 0) {
-    return data.pvSystems[0].pvSystemId;
+    const sys = data.pvSystems[0];
+    // Default to 'Fronius Solar.web' if the name field is empty or missing
+    return { id: sys.pvSystemId, name: sys.name || 'Fronius Solar.web' };
   }
   return null;
 }
 
-async function pollFronius(pvSystemId: string, authHeaders: HeadersInit, bridge: EvenAppBridge, updateStatus: (s: string) => void) {
+async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders: HeadersInit, bridge: EvenAppBridge, updateStatus: (s: string) => void) {
   try {
     const url = `${SW_BASE_URL}/pvsystems/${pvSystemId}/flowdata`;
     const response = await fetch(url, { headers: authHeaders });
@@ -108,13 +110,15 @@ async function pollFronius(pvSystemId: string, authHeaders: HeadersInit, bridge:
         throw new Error("Invalid Solar.web flow channels structure.");
     }
 
+    console.log("AVAILABLE FLOW CHANNELS:", JSON.stringify(channels, null, 2));
+
     // Solar.web returns channels like:
     // { channelName: 'Power', channelType: 'Power', unit: 'W', value: 1234 }
     let pvGen = 0;
     let grid = 0;
     let load = 0;
-    let autonomy = 0;
     let battSoc: number | null = null;
+    let battPower: number | null = null; // PowerBattCharge: positive or negative charge/discharge
 
     // Solar.web returns exact channelNames we can match reliably
     for (const ch of channels) {
@@ -122,24 +126,43 @@ async function pollFronius(pvSystemId: string, authHeaders: HeadersInit, bridge:
       if (name === 'PowerPV') pvGen = Number(ch.value) || 0;
       if (name === 'PowerFeedIn') grid = Number(ch.value) || 0;
       if (name === 'PowerLoad') load = Number(ch.value) || 0;
-      if (name === 'RateSelfSufficiency') autonomy = Number(ch.value) || 0;
       if (name === 'BattSOC' && ch.value !== null) battSoc = Number(ch.value);
+      if (name === 'PowerBattCharge' && ch.value !== null) battPower = Number(ch.value);
     }
 
-    const pvStr = pvGen ? `${pvGen.toFixed(0)} W` : '0 W';
-    const gridStr = grid > 0 ? `Draw: +${grid.toFixed(0)} W` : `Feed: ${Math.abs(grid).toFixed(0)} W`;
-    const loadStr = Math.abs(load).toFixed(0) + ' W';
+    const formatPower = (watts: number) => {
+      const absWatts = Math.abs(watts);
+      if (absWatts >= 1000) {
+        return `${(absWatts / 1000).toFixed(2)} kW`;
+      }
+      return `${absWatts.toFixed(0)} W`;
+    };
+
+    const pvStr = `PV Gen: ${formatPower(pvGen)}`;
+    // If Grid > 0 we draw from grid (+), if < 0 we feed into grid (-)
+    const gridStr = grid > 0 ? `+${formatPower(grid)}` : `-${formatPower(grid)}`;
+    const loadStr = formatPower(load);
 
     let renderText = 
-      `Fronius Solar.web\n\n` + 
-      `PV Gen : ${pvStr}\n` + 
-      `Grid   : ${gridStr}\n` + 
-      `Load   : ${loadStr}\n\n`;
+      `${pvSystemName}\n\n` + 
+      `${pvStr}\n` + 
+      `Load: ${loadStr}\n` + 
+      `Grid: ${gridStr}\n\n`;
       
     if (battSoc !== null) {
-      renderText += `Battery: ${battSoc.toFixed(1)}%\n`;
+      const socStr = `${battSoc.toFixed(1)}%`;
+      if (battPower !== null) {
+        // PowerBattCharge: If positive, it's discharging (Out) to the house. If negative, it's charging (In) from PV.
+        // Or vice versa depending on exact Fronius firmware, but generally we show absolute value with text.
+        // From our nighttime test, 306W is positive when house draws 300W and PV is 0. So positive == Out.
+        const discharging = battPower > 0;
+        const pwrStr = formatPower(Math.abs(battPower));
+        const statusStr = discharging ? `Out: ${pwrStr}` : `In: ${pwrStr}`;
+        renderText += `Battery: ${socStr} (${statusStr})\n\n`;
+      } else {
+         renderText += `Battery: ${socStr}\n\n`;
+      }
     }
-    renderText += (autonomy ? `Autonomy: ${autonomy.toFixed(0)}%` : `Online`);
     
     await bridge.textContainerUpgrade(new TextContainerUpgrade({
       containerID: CONTAINER_ID,
