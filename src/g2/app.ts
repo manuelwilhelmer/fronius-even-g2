@@ -230,19 +230,20 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
     console.log("AVAILABLE FLOW CHANNELS:", JSON.stringify(channels, null, 2));
 
     // Solar.web returns channels like:
-    // { channelName: 'Power', channelType: 'Power', unit: 'W', value: 1234 }
+    // Solar.web returns exact channelNames we can match reliably
     let pvGen = 0;
     let grid = 0;
     let load = 0;
     let battSoc: number | null = null;
     let battPower: number | null = null; // PowerBattCharge: positive or negative charge/discharge
+    let battEVC: number | null = null; // PowerEVCTotal
 
-    // Solar.web returns exact channelNames we can match reliably
     for (const ch of channels) {
       const name = ch.channelName;
       if (name === 'PowerPV') pvGen = Number(ch.value) || 0;
       if (name === 'PowerFeedIn') grid = Number(ch.value) || 0;
       if (name === 'PowerLoad') load = Number(ch.value) || 0;
+      if (name === 'PowerEVCTotal' && ch.value !== null) battEVC = Number(ch.value);
       if (name === 'BattSOC' && ch.value !== null) battSoc = Number(ch.value);
       if (name === 'PowerBattCharge' && ch.value !== null) battPower = Number(ch.value);
     }
@@ -264,14 +265,19 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
       `${pvSystemName}\n\n` + 
       `${pvStr}\n` + 
       `Load: ${loadStr}\n` + 
-      `Grid: ${gridStr}\n\n`;
+      `Grid: ${gridStr}\n`;
       
+    if (battEVC !== null && battEVC > 0) {
+      renderText += `Wattpilot: ${formatPower(battEVC)}\n`;
+    }
+    
+    // add an extra line break before battery or at the end of grid/wattpilot
+    renderText += `\n`;
+
     if (battSoc !== null) {
       const socStr = `${battSoc.toFixed(0)}%`;
       if (battPower !== null) {
         // PowerBattCharge: If positive, it's discharging (Out) to the house. If negative, it's charging (In) from PV.
-        // From our nighttime test, 306W is positive when house draws 300W and PV is 0. So positive == discharging.
-        // User requested: Out -> '-', In -> '+'
         const discharging = battPower > 0;
         const pwrStr = formatPower(Math.abs(battPower));
         const signStr = discharging ? '-' : '+';
