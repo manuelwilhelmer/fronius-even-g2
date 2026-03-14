@@ -50,6 +50,12 @@ A daily summary of your energy usage and grid independence:
 - **Self-Supplied**: Amount of your consumption covered by your own system (kWh).
 - **Grid Import**: Amount of energy pulled from the grid today (kWh).
 
+#### Page 4: Monthly Production 📅
+A comprehensive monthly summary. This page features an interactive selection menu:
+- **Double-Tap**: Double tap the glasses touch panel to open the interactive **Month Selection Menu**.
+- **Scroll**: Swipe up or down to scroll through a list of the last 12 months.
+- **Confirm**: Double tap again on your desired month to close the menu and load the newly selected month's production data.
+
 ## Technical Stack
 - **Frontend**: React 19, TypeScript, Vite
 - **Styling**: Tailwind CSS v4

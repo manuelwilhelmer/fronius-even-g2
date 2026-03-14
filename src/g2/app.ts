@@ -7,10 +7,14 @@ import {
 } from '@evenrealities/even_hub_sdk';
 
 let pollingInterval: number | null = null;
-let currentPage = 0; // 0 = Live, 1 = Daily Prod, 2 = Daily Cons
+let currentPage = 0; // 0 = Live, 1 = Daily Prod, 2 = Daily Cons, 3 = Monthly Prod
+let currentMonthOffset = 0; // 0 = Current month, 1 = Last month, etc. (up to 11)
+let isMonthMenuOpen = false;
+let menuMonthOffset = 0;
 let renderLive = 'Connected to Solar.web!\nWaiting for live data...';
 let renderDaily = 'Connected to Solar.web!\nWaiting for daily production...';
 let renderDailyCon = 'Connected to Solar.web!\nWaiting for daily consumption...';
+let renderMonthly = 'Connected to Solar.web!\nWaiting for monthly production...';
 let globalBridge: EvenAppBridge | null = null;
 let globalUpdateStatus: ((s: string) => void) | null = null;
 
@@ -62,24 +66,55 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
     bridge.onEvenHubEvent((event: any) => {
       console.log('EvenHubEvent received:', JSON.stringify(event));
       
-      // The event typically contains a textEvent or listEvent property with an eventType
-      // such as 1 (SCROLL_TOP_EVENT) or 2 (SCROLL_BOTTOM_EVENT) or their string equivalents.
       const eventType = event.textEvent?.eventType ?? event.listEvent?.eventType ?? event.sysEvent?.eventType;
-      
       const evtStr = String(eventType).toUpperCase();
+      
       const isScroll = evtStr === '1' || evtStr === '2' || evtStr.includes('SCROLL');
+      const isDoubleTap = evtStr === '3' || evtStr.includes('DOUBLE_CLICK');
 
-      if (isScroll) {
-        const now = Date.now();
-        if (now - lastPageTurn > 500) { // 500ms debounce
-          if (evtStr === '1' || evtStr.includes('SCROLL_TOP')) {
-            currentPage = (currentPage - 1 + 3) % 3; // Go back
-          } else {
-            currentPage = (currentPage + 1) % 3; // Go forward (SCROLL_BOTTOM or others)
-          }
-          updateHUD().catch(console.error);
-          lastPageTurn = now;
+      const now = Date.now();
+
+      if (isScroll && now - lastPageTurn > 500) { // 500ms debounce
+        const isUp = evtStr === '1' || evtStr.includes('SCROLL_TOP');
+        
+        if (currentPage === 3 && isMonthMenuOpen) {
+           // We are in the popup menu - scroll through months
+           if (isUp) {
+              menuMonthOffset = Math.max(0, menuMonthOffset - 1);
+           } else {
+              menuMonthOffset = Math.min(11, menuMonthOffset + 1);
+           }
+           updateHUD().catch(console.error);
+        } else {
+           // Normal Page navigation
+           if (isUp) {
+             currentPage = (currentPage - 1 + 4) % 4; // Go back
+           } else {
+             currentPage = (currentPage + 1) % 4; // Go forward
+           }
+           updateHUD().catch(console.error);
         }
+        lastPageTurn = now;
+      }
+      
+      if (isDoubleTap && currentPage === 3 && now - lastPageTurn > 500) {
+        if (!isMonthMenuOpen) {
+           // Open the menu
+           isMonthMenuOpen = true;
+           menuMonthOffset = currentMonthOffset;
+           updateHUD().catch(console.error);
+        } else {
+           // Confirm selection and close menu
+           isMonthMenuOpen = false;
+           currentMonthOffset = menuMonthOffset;
+           updateHUD().catch(console.error);
+           
+           // Force an immediate API fetch rather than wait for the 3.5s interval
+           if (globalBridge && globalUpdateStatus && pvSystem) {
+             pollFronius(pvSystem.id, pvSystem.name, authHeaders, globalBridge, globalUpdateStatus).catch(console.error);
+           }
+        }
+        lastPageTurn = now;
       }
     });
 
@@ -135,7 +170,34 @@ async function getPvSystemInfo(authHeaders: HeadersInit): Promise<{ id: string, 
 
 async function updateHUD() {
   if (!globalBridge) return;
-  const content = currentPage === 0 ? renderLive : (currentPage === 1 ? renderDaily : renderDailyCon);
+  let content = renderLive;
+
+  if (currentPage === 1) content = renderDaily;
+  if (currentPage === 2) content = renderDailyCon;
+  if (currentPage === 3) {
+     if (isMonthMenuOpen) {
+       // Generate the text menu instead of the data
+       const today = new Date();
+       let menuStr = "Select month (Scroll, then Double-Tap)\n\n";
+       
+       // Show 2 months before and 2 after the cursor, clamped to [0..11] range
+       const startIdx = Math.max(0, menuMonthOffset - 2);
+       const endIdx = Math.min(11, startIdx + 4); // Always try to show ~5 items
+       
+       for(let i = startIdx; i <= endIdx; i++) {
+         const mDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
+         const mName = mDate.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+         if (i === menuMonthOffset) {
+            menuStr += ` [▶] ${mName}\n`;
+         } else {
+            menuStr += `     ${mName}\n`;
+         }
+       }
+       content = menuStr;
+     } else {
+       content = renderMonthly;
+     }
+  }
   
   await globalBridge.textContainerUpgrade(new TextContainerUpgrade({
     containerID: CONTAINER_ID,
@@ -146,7 +208,7 @@ async function updateHUD() {
   }));
   
   if (globalUpdateStatus) {
-    const pageName = currentPage === 0 ? 'Live' : (currentPage === 1 ? 'Prod' : 'Cons');
+    const pageName = ['Live', 'Prod', 'Cons', 'Month'][currentPage];
     globalUpdateStatus(`Updated: ${new Date().toLocaleTimeString()} (Page: ${pageName})`);
   }
 }
@@ -279,6 +341,57 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
       console.error("Failed to fetch daily aggrdata", e);
     }
     
+    // Fetch Monthly AggrData
+    try {
+      const today = new Date();
+      // Calculate target month based on offset
+      const targetDate = new Date(today.getFullYear(), today.getMonth() - currentMonthOffset, 1);
+      const mYear = targetDate.getFullYear();
+      const mMonth = String(targetDate.getMonth() + 1).padStart(2, '0');
+      
+      // Get the last day of that month
+      const lastDayDate = new Date(mYear, targetDate.getMonth() + 1, 0);
+      const mDayLast = String(lastDayDate.getDate()).padStart(2, '0');
+
+      const mFrom = `${mYear}-${mMonth}-01`;
+      const mTo = `${mYear}-${mMonth}-${mDayLast}`;
+
+      const aggrUrlMonth = `${SW_BASE_URL}/pvsystems/${pvSystemId}/aggrdata?From=${mFrom}&To=${mTo}`;
+      const aggrResMonth = await fetch(aggrUrlMonth, { headers: authHeaders });
+      
+      if (aggrResMonth.ok) {
+        const aggrData = await aggrResMonth.json();
+        const aggrChannels = aggrData?.data?.[0]?.channels || [];
+        
+        let mProdTotal = 0;
+        let mSelfConsEnergy = 0;
+        let mFeedIn = 0;
+
+        for (const ch of aggrChannels) {
+          if (ch.channelName === 'EnergyProductionTotal') mProdTotal = Number(ch.value) || 0;
+          if (ch.channelName === 'EnergySelfConsumptionTotal') mSelfConsEnergy = Number(ch.value) || 0;
+          if (ch.channelName === 'EnergyFeedIn') mFeedIn = Number(ch.value) || 0;
+        }
+
+        const mSelfConsRate = mProdTotal > 0 ? (mSelfConsEnergy / mProdTotal) * 100 : 0;
+
+        const formatEnergy = (wh: number) => {
+          return `${(wh / 1000).toFixed(2)} kWh`;
+        };
+        
+        const monthName = targetDate.toLocaleString('en-US', { month: 'long' });
+
+        renderMonthly = 
+          `${monthName} production\n\n` +
+          `Production: ${formatEnergy(mProdTotal)}\n` +
+          `Self-Consumption rate: ${mSelfConsRate.toFixed(0)}%\n` +
+          `Self-Consumption: ${formatEnergy(mSelfConsEnergy)}\n` +
+          `Grid Feed-In: ${formatEnergy(mFeedIn)}\n`;
+      }
+    } catch (e) {
+      console.error("Failed to fetch monthly aggrdata", e);
+    }
+
     await updateHUD();
     
   } catch (err: any) {
