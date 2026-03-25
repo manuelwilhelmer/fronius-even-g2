@@ -1,39 +1,23 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;0,800;0,900;1,700;1,800;1,900&display=swap');
-
 @import "tailwindcss";
+@import "../node_modules/even-toolkit/web/theme/tokens-light.css";
+@import "../node_modules/even-toolkit/web/theme/typography.css";
+@import "../node_modules/even-toolkit/web/theme/utilities.css";
 
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Playfair Display", "Publico Headline", serif;
-}
-
+/* Custom overrides for Fronius Companion App */
 :root {
-  font-family: var(--font-sans);
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0d1117;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --color-accent: #e2231a;
+  --color-text-highlight: #ffffff;
 }
 
-body {
+html, body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
+  padding: 0;
   min-height: 100vh;
 }
 
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
   width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }

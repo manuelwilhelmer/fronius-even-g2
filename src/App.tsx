@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AppShell, Card, Button, Input, StatusDot, ScreenHeader, Loading } from 'even-toolkit/web';
 import { initEvenG2App } from './g2/app';
 
 export default function App() {
@@ -9,6 +10,7 @@ export default function App() {
   const [saved, setSaved] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('');
   const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
     // Keep translation strictly local so the initial status can translate
@@ -35,8 +37,10 @@ export default function App() {
       return;
     }
     
+    setIsConnecting(true);
     setConnectionStatus(t('statusConnecting'));
     try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
       await initEvenG2App(email, password, setConnectionStatus);
       setIsConnected(true);
       setConnectionStatus(t('statusConnected'));
@@ -44,6 +48,8 @@ export default function App() {
       console.error(err);
       setConnectionStatus(t('statusError'));
       setIsConnected(false);
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -52,102 +58,91 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[90vh] space-y-8 p-6 mx-auto max-w-lg w-full bg-white border border-gray-100 shadow-xl rounded-3xl relative">
-      
-      {/* Header with Logo and Language Switcher */}
-      <div className="absolute top-6 left-6 right-6 flex justify-between items-center">
-        <div className="h-8 flex items-center">
-          <svg viewBox="0 0 250 100" className="h-full w-auto">
-            <ellipse cx="125" cy="50" rx="120" ry="45" fill="#e2231a" />
-            <text 
-              x="50%" 
-              y="55%" 
-              dominantBaseline="middle" 
-              textAnchor="middle" 
-              fill="white" 
-              fontSize="44" 
-              fontWeight="900" 
-              fontFamily="Arial, sans-serif"
-              fontStyle="italic"
-              letterSpacing="-2"
-            >
-              Fronius
-            </text>
-          </svg>
+    <AppShell
+      header={
+        <div className="flex justify-between items-center px-4 py-2 bg-bg border-b border-divider">
+          <ScreenHeader title={t('appTitle')} />
+          <select 
+            value={i18n.language}
+            onChange={(e) => changeLanguage(e.target.value)}
+            className="text-xs font-bold uppercase text-text bg-surface rounded-md px-3 py-1.5 border border-divider outline-none"
+          >
+            <option value="en">EN</option>
+            <option value="de">DE</option>
+          </select>
         </div>
-        <select 
-          value={i18n.language}
-          onChange={(e) => changeLanguage(e.target.value)}
-          className="text-xs font-bold uppercase text-gray-400 bg-gray-50 hover:bg-gray-100 rounded-md px-3 py-1.5 outline-none transition-colors border border-gray-100 cursor-pointer tracking-wider font-sans"
-        >
-          <option value="en">EN</option>
-          <option value="de">DE</option>
-        </select>
-      </div>
-
-      <div className="text-center space-y-1.5 mt-10">
-        <h1 className="text-3xl font-sans font-bold tracking-tight text-[#e2231a] uppercase">
-          {t('appTitle')}
-        </h1>
-        <p className="text-gray-500 text-sm max-w-sm mx-auto font-sans leading-relaxed">
+      }
+    >
+      <div className="px-4 flex flex-col gap-6 max-w-lg mx-auto w-full pt-6">
+        <p className="text-text-dim text-sm -mt-2 mb-2">
           {t('subtitle')}
         </p>
-      </div>
 
-      <div className="w-full space-y-4 text-left font-sans">
-        <div>
-          <label htmlFor="email" className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">
-            {t('emailLabel')}
-          </label>
-          <input
-            type="email"
-            id="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={t('emailPlaceholder')}
-            className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-transparent transition-all"
-          />
-        </div>
+        {/* Form elements */}
+        <Card>
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-dim uppercase tracking-widest mb-1">
+                {t('emailLabel')}
+              </label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e: any) => setEmail(e?.target ? e.target.value : e)}
+                placeholder={t('emailPlaceholder')}
+              />
+            </div>
 
-        <div>
-           <label htmlFor="password" className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">
-            {t('passwordLabel')}
-          </label>
-          <input
-            type="password"
-            id="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            className="w-full px-3 py-2.5 text-[8px] bg-gray-50 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-transparent transition-all tracking-[0.3em]"
-          />
-        </div>
-        
-        <div className="flex space-x-3 pt-4">
-          <button
-            onClick={handleSave}
-            className="flex-1 py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold rounded-lg transition-colors outline-none text-sm"
-          >
-            {saved ? t('savedBtn') : t('saveBtn')}
-          </button>
-          <button
-            onClick={handleConnect}
-            disabled={isConnected}
-            className="flex-[2] py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed tracking-wide text-sm"
-          >
-            {isConnected ? t('connectedBtn') : t('connectBtn')}
-          </button>
-        </div>
-      </div>
+            <div>
+              <label className="block text-xs font-bold text-text-dim uppercase tracking-widest mb-1">
+                {t('passwordLabel')}
+              </label>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e: any) => setPassword(e?.target ? e.target.value : e)}
+                placeholder="••••••••"
+              />
+            </div>
+            
+            <div className="flex gap-3 pt-2">
+              <Button
+                size="sm"
+                variant="default"
+                onClick={handleSave}
+                className="flex-[1] border border-divider shadow-sm"
+              >
+                {saved ? t('savedBtn') : t('saveBtn')}
+              </Button>
+              <Button
+                size="sm"
+                variant="highlight"
+                onClick={handleConnect}
+                disabled={isConnected || isConnecting}
+                className="flex-[2] border border-divider shadow-sm"
+              >
+                {isConnected ? t('connectedBtn') : t('connectBtn')}
+              </Button>
+            </div>
+          </div>
+        </Card>
 
-      <div className="w-full p-4 bg-gray-50/50 rounded-xl border border-gray-100 mt-4">
-        <div className="flex items-center space-x-3">
-          <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500'}`}></div>
-          <p className="text-xs font-medium text-gray-400 tracking-wide uppercase">
-            {connectionStatus}
-          </p>
-        </div>
+        {/* Status Area */}
+        <Card>
+          {isConnecting ? (
+            <div className="flex justify-center py-1">
+              <Loading size={24} className="text-text-dim" />
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 py-1">
+              <StatusDot connected={isConnected} />
+              <span className="text-sm font-medium text-text-dim uppercase tracking-wide">
+                {connectionStatus}
+              </span>
+            </div>
+          )}
+        </Card>
       </div>
-    </div>
+    </AppShell>
   );
 }
