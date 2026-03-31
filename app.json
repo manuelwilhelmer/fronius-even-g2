@@ -14,7 +14,8 @@
     },
     {
       "name": "network",
-      "desc": "Required to fetch Solar.web API data"
+      "desc": "Required to fetch Solar.web API data",
+      "whitelist": ["https://swqapi.solarweb.com"]
     }
   ],
   "supported_languages": [
