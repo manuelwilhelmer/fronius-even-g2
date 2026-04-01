@@ -36,13 +36,13 @@ jobs:
       - name: Build project
         run: |
           npm run build
-          npx evenhub pack app.json ./dist
+          npx evenhub pack app.json dist -o fronius_solar.ehpk
           
       - name: Upload EHPK Bundle
         uses: actions/upload-artifact@v4
         with:
           name: fronius-solar-ehpk
-          path: out.ehpk
+          path: fronius_solar.ehpk
           
       - name: Setup Pages
         uses: actions/configure-pages@v4
