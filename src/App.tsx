@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell, Card, Button, Input, StatusDot, ScreenHeader, Loading } from 'even-toolkit/web';
+import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { initEvenG2App } from './g2/app';
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const isAutoConnecting = useRef(false);
 
   useEffect(() => {
     // Keep translation strictly local so the initial status can translate
@@ -18,21 +20,53 @@ export default function App() {
   }, [t]);
 
   useEffect(() => {
-    const savedEmail = localStorage.getItem('solarweb_email');
-    const savedPassword = localStorage.getItem('solarweb_password');
-    if (savedEmail) setEmail(savedEmail);
-    if (savedPassword) setPassword(savedPassword);
+    const loadSavedData = async () => {
+      let savedEmail = localStorage.getItem('solarweb_email') || '';
+      let savedPassword = localStorage.getItem('solarweb_password') || '';
+
+      try {
+        const bridge = await waitForEvenAppBridge();
+        const bridgeEmail = await bridge.getLocalStorage('solarweb_email');
+        const bridgePass = await bridge.getLocalStorage('solarweb_password');
+
+        if (bridgeEmail) savedEmail = String(bridgeEmail);
+        if (bridgePass) savedPassword = String(bridgePass);
+      } catch (e) {
+        console.log('Bridge not available for loading local storage', e);
+      }
+
+      if (savedEmail) setEmail(savedEmail);
+      if (savedPassword) setPassword(savedPassword);
+
+      if (savedEmail && savedPassword && !isAutoConnecting.current) {
+        isAutoConnecting.current = true;
+        handleConnect(savedEmail, savedPassword);
+      }
+    };
+    
+    loadSavedData();
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     localStorage.setItem('solarweb_email', email);
     localStorage.setItem('solarweb_password', password);
+    try {
+      const bridge = await waitForEvenAppBridge();
+      await bridge.setLocalStorage('solarweb_email', email);
+      await bridge.setLocalStorage('solarweb_password', password);
+    } catch (e) {
+      console.log('Bridge not available for saving local storage', e);
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleConnect = async () => {
-    if (!email || !password) {
+  const handleConnect = async (overrideEmail?: string, overridePass?: string) => {
+    // Determine which credentials to use (function arguments or component state)
+    const e = typeof overrideEmail === 'string' ? overrideEmail : email;
+    const p = typeof overridePass === 'string' ? overridePass : password;
+    
+    if (!e || !p) {
       setConnectionStatus(t('statusEmpty'));
       return;
     }
@@ -40,8 +74,9 @@ export default function App() {
     setIsConnecting(true);
     setConnectionStatus(t('statusConnecting'));
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      await initEvenG2App(email, password, setConnectionStatus);
+      // Reduced delay for faster autonomous background execution
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await initEvenG2App(e, p, setConnectionStatus);
       setIsConnected(true);
       setConnectionStatus(t('statusConnected'));
     } catch (err) {
@@ -117,7 +152,7 @@ export default function App() {
               <Button
                 size="sm"
                 variant="highlight"
-                onClick={handleConnect}
+                onClick={() => handleConnect()}
                 disabled={isConnected || isConnecting}
                 className="flex-[2] border border-divider shadow-sm"
               >
