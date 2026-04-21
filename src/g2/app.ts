@@ -27,16 +27,9 @@ const DEFAULT_ACCESSKEY_VALUE = "67315e19-6805-479e-994d-7193ee5f6125";
 export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
   globalUpdateStatus = updateStatus;
   try {
-    updateStatus('Authenticating with Solar.web...');
-    const authHeaders = await loginSolarWeb(email, pass);
-    
-    updateStatus('Finding PV System...');
-    const pvSystem = await getPvSystemInfo(authHeaders);
-    if (!pvSystem) {
-      throw new Error("No PV System found on this account.");
-    }
-
     const bridge = await withTimeout(waitForEvenAppBridge(), 10000);
+    globalBridge = bridge;
+
     updateStatus('Bridge acquired. Initializing glasses layout...');
     
     await bridge.createStartUpPageContainer(
@@ -53,14 +46,21 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
             paddingLength: 4,
             containerID: CONTAINER_ID,
             containerName: 'fronius-data',
-            content: renderLive,
+            content: 'Connecting to Solar.web...',
             isEventCapture: 1,
           })
         ]
       })
     );
 
-    globalBridge = bridge;
+    updateStatus('Authenticating with Solar.web...');
+    const authHeaders = await loginSolarWeb(email, pass);
+    
+    updateStatus('Finding PV System...');
+    const pvSystem = await getPvSystemInfo(authHeaders);
+    if (!pvSystem) {
+      throw new Error("No PV System found on this account.");
+    }
 
     // Listen for gestures to switch pages
     let lastPageTurn = 0;
