@@ -1,0 +1,22 @@
+Package                            Current    Wanted  Latest  Location                                       Depended by
+@eslint/js                          9.39.4    9.39.4  10.0.1  node_modules/@eslint/js                        fronius-even-g2
+@evenrealities/evenhub-cli          0.1.11    0.1.13  0.1.13  node_modules/@evenrealities/evenhub-cli        fronius-even-g2
+@evenrealities/evenhub-simulator     0.7.2     0.7.3   0.7.3  node_modules/@evenrealities/evenhub-simulator  fronius-even-g2
+@tailwindcss/vite                    4.2.2     4.2.4   4.2.4  node_modules/@tailwindcss/vite                 fronius-even-g2
+@types/node                        24.12.0   24.12.2  25.6.0  node_modules/@types/node                       fronius-even-g2
+eslint                              9.39.4    9.39.4  10.2.1  node_modules/eslint                            fronius-even-g2
+eslint-plugin-react-hooks            7.0.1     7.1.1   7.1.1  node_modules/eslint-plugin-react-hooks         fronius-even-g2
+even-toolkit                         1.7.0     1.7.2   1.7.2  node_modules/even-toolkit                      fronius-even-g2
+globals                             17.4.0    17.5.0  17.5.0  node_modules/globals                           fronius-even-g2
+i18next                           25.10.10  25.10.10  26.0.8  node_modules/i18next                           fronius-even-g2
+lucide-react                       0.577.0   0.577.0  1.11.0  node_modules/lucide-react                      fronius-even-g2
+react                               19.2.4    19.2.5  19.2.5  node_modules/react                             fronius-even-g2
+react-dom                           19.2.4    19.2.5  19.2.5  node_modules/react-dom                         fronius-even-g2
+react-i18next                       16.6.6    16.6.6  17.0.6  node_modules/react-i18next                     fronius-even-g2
+react-is                            19.2.4    19.2.5  19.2.5  node_modules/react-is                          fronius-even-g2
+react-router                        7.13.2    7.14.2  7.14.2  node_modules/react-router                      fronius-even-g2
+tailwindcss                          4.2.2     4.2.4   4.2.4  node_modules/tailwindcss                       fronius-even-g2
+typescript                           5.9.3     5.9.3   6.0.3  node_modules/typescript                        fronius-even-g2
+typescript-eslint                   8.58.0    8.59.1  8.59.1  node_modules/typescript-eslint                 fronius-even-g2
+vite                                 8.0.3    8.0.10  8.0.10  node_modules/vite                              fronius-even-g2
+vite-plugin-singlefile               2.3.2     2.3.3   2.3.3  node_modules/vite-plugin-singlefile            fronius-even-g2

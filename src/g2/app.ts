@@ -24,14 +24,13 @@ const SW_BASE_URL = "https://swqapi.solarweb.com";
 const DEFAULT_ACCESSKEY_ID = "FKIAB4CDA71C0763413DA942DC756742318B";
 const DEFAULT_ACCESSKEY_VALUE = "67315e19-6805-479e-994d-7193ee5f6125";
 
-export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
-  globalUpdateStatus = updateStatus;
+let isStartUpPageCreated = false;
+
+export async function showInitialMessage() {
+  if (isStartUpPageCreated) return;
   try {
     const bridge = await withTimeout(waitForEvenAppBridge(), 10000);
     globalBridge = bridge;
-
-    updateStatus('Bridge acquired. Initializing glasses layout...');
-    
     await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
         containerTotalNum: 1,
@@ -46,12 +45,57 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
             paddingLength: 4,
             containerID: CONTAINER_ID,
             containerName: 'fronius-data',
-            content: 'Connecting to Solar.web...',
+            content: 'Fronius started.\nPlease continue on phone.',
             isEventCapture: 1,
           })
         ]
       })
     );
+    isStartUpPageCreated = true;
+  } catch (error) {
+    console.error('Failed to show initial message:', error);
+  }
+}
+
+export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
+  globalUpdateStatus = updateStatus;
+  try {
+    const bridge = await withTimeout(waitForEvenAppBridge(), 10000);
+    globalBridge = bridge;
+
+    updateStatus('Bridge acquired. Initializing glasses layout...');
+    
+    if (!isStartUpPageCreated) {
+      await bridge.createStartUpPageContainer(
+        new CreateStartUpPageContainer({
+          containerTotalNum: 1,
+          textObject: [
+            new TextContainerProperty({
+              xPosition: 0,
+              yPosition: 0,
+              width: 576,
+              height: 288,
+              borderWidth: 0,
+              borderColor: 0, 
+              paddingLength: 4,
+              containerID: CONTAINER_ID,
+              containerName: 'fronius-data',
+              content: 'Connecting to Solar.web...',
+              isEventCapture: 1,
+            })
+          ]
+        })
+      );
+      isStartUpPageCreated = true;
+    } else {
+      await bridge.textContainerUpgrade(new TextContainerUpgrade({
+        containerID: CONTAINER_ID,
+        containerName: 'fronius-data',
+        contentOffset: 0,
+        contentLength: 1000, 
+        content: 'Connecting to Solar.web...',
+      }));
+    }
 
     updateStatus('Authenticating with Solar.web...');
     const authHeaders = await loginSolarWeb(email, pass);
@@ -72,6 +116,7 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
       
       const isScroll = evtStr === '1' || evtStr === '2' || evtStr.includes('SCROLL');
       const isDoubleTap = evtStr === '3' || evtStr.includes('DOUBLE_CLICK');
+      const isSingleTap = evtStr === '0' || evtStr === 'UNDEFINED' || (evtStr.includes('CLICK') && !evtStr.includes('DOUBLE'));
 
       const now = Date.now();
 
@@ -98,22 +143,33 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
         lastPageTurn = now;
       }
       
-      if (isDoubleTap && (currentPage === 3 || currentPage === 4) && now - lastPageTurn > 500) {
-        if (!isMonthMenuOpen) {
-           // Open the menu
-           isMonthMenuOpen = true;
-           menuMonthOffset = currentMonthOffset;
-           updateHUD().catch(console.error);
-        } else {
-           // Confirm selection and close menu
-           isMonthMenuOpen = false;
-           currentMonthOffset = menuMonthOffset;
-           updateHUD().catch(console.error);
-           
-           // Force an immediate API fetch rather than wait for the 3.5s interval
-           if (globalBridge && globalUpdateStatus && pvSystem) {
-             pollFronius(pvSystem.id, pvSystem.name, authHeaders, globalBridge, globalUpdateStatus).catch(console.error);
-           }
+      if (isSingleTap && now - lastPageTurn > 500) {
+        if (currentPage === 3 || currentPage === 4) {
+          if (!isMonthMenuOpen) {
+             // Open the menu
+             isMonthMenuOpen = true;
+             menuMonthOffset = currentMonthOffset;
+             updateHUD().catch(console.error);
+          } else {
+             // Confirm selection and close menu
+             isMonthMenuOpen = false;
+             currentMonthOffset = menuMonthOffset;
+             updateHUD().catch(console.error);
+             
+             // Force an immediate API fetch rather than wait for the 3.5s interval
+             if (globalBridge && globalUpdateStatus && pvSystem) {
+               pollFronius(pvSystem.id, pvSystem.name, authHeaders, globalBridge, globalUpdateStatus).catch(console.error);
+             }
+          }
+        }
+        lastPageTurn = now;
+      }
+      
+      if (isDoubleTap && now - lastPageTurn > 500) {
+        if (currentPage === 0) {
+          if (globalBridge) {
+             globalBridge.shutDownPageContainer(1).catch(console.error);
+          }
         }
         lastPageTurn = now;
       }
@@ -179,7 +235,7 @@ async function updateHUD() {
      if (isMonthMenuOpen) {
        // Generate the text menu instead of the data
        const today = new Date();
-       let menuStr = "Select month (Scroll, then Double-Tap)\n\n";
+       let menuStr = "Select month (Scroll, then Single-Tap)\n\n";
        
        // Show 2 months before and 2 after the cursor, clamped to [0..11] range
        const startIdx = Math.max(0, menuMonthOffset - 2);
