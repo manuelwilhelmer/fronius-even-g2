@@ -25,11 +25,19 @@ const DEFAULT_ACCESSKEY_ID = "FKIAB4CDA71C0763413DA942DC756742318B";
 const DEFAULT_ACCESSKEY_VALUE = "67315e19-6805-479e-994d-7193ee5f6125";
 
 let isStartUpPageCreated = false;
+let bridgePromise: Promise<EvenAppBridge> | null = null;
+
+export function getBridge(): Promise<EvenAppBridge> {
+  if (!bridgePromise) {
+    bridgePromise = withTimeout(waitForEvenAppBridge(), 10000);
+  }
+  return bridgePromise;
+}
 
 export async function showInitialMessage() {
   if (isStartUpPageCreated) return;
   try {
-    const bridge = await withTimeout(waitForEvenAppBridge(), 10000);
+    const bridge = await getBridge();
     globalBridge = bridge;
     await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
@@ -60,7 +68,7 @@ export async function showInitialMessage() {
 export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
   globalUpdateStatus = updateStatus;
   try {
-    const bridge = await withTimeout(waitForEvenAppBridge(), 10000);
+    const bridge = await getBridge();
     globalBridge = bridge;
 
     updateStatus('Bridge acquired. Initializing glasses layout...');
@@ -492,7 +500,7 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
   }
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {
       reject(new Error(`Operation timed out after ${timeoutMs}ms`));
