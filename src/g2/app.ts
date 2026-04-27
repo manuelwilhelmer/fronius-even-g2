@@ -31,7 +31,8 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
     globalBridge = bridge;
 
     updateStatus('Bridge acquired. Initializing glasses layout...');
-    
+
+    // Immediately render a visible startup message so the OS process check passes
     await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
         containerTotalNum: 1,
@@ -42,11 +43,11 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
             width: 576,
             height: 288,
             borderWidth: 0,
-            borderColor: 0, 
+            borderColor: 0,
             paddingLength: 4,
             containerID: CONTAINER_ID,
             containerName: 'fronius-data',
-            content: 'Connecting to Solar.web...',
+            content: 'Fronius Solar.web started, please continue on phone.',
             isEventCapture: 1,
           })
         ]
@@ -63,59 +64,101 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
     }
 
     // Listen for gestures to switch pages
-    let lastPageTurn = 0;
+    let lastEventTime = 0;
     bridge.onEvenHubEvent((event: any) => {
       console.log('EvenHubEvent received:', JSON.stringify(event));
       
       const eventType = event.textEvent?.eventType ?? event.listEvent?.eventType ?? event.sysEvent?.eventType;
       const evtStr = String(eventType).toUpperCase();
-      
-      const isScroll = evtStr === '1' || evtStr === '2' || evtStr.includes('SCROLL');
-      const isDoubleTap = evtStr === '3' || evtStr.includes('DOUBLE_CLICK');
+
+      // --- Lifecycle events ---
+      if (evtStr.includes('FOREGROUND_EXIT') || evtStr === '5') {
+        // Pause polling when app goes to background
+        if (pollingInterval) {
+          window.clearInterval(pollingInterval);
+          pollingInterval = null;
+        }
+        return;
+      }
+      if (evtStr.includes('FOREGROUND_ENTER') || evtStr === '4') {
+        // Resume polling when app returns to foreground
+        if (!pollingInterval && pvSystem) {
+          pollFronius(pvSystem.id, pvSystem.name, authHeaders, bridge, updateStatus).catch(console.error);
+          pollingInterval = window.setInterval(() => {
+            pollFronius(pvSystem.id, pvSystem.name, authHeaders, bridge, updateStatus);
+          }, 3500);
+        }
+        return;
+      }
+      if (evtStr.includes('ABNORMAL_EXIT') || evtStr === '6' || evtStr.includes('SYSTEM_EXIT') || evtStr === '7') {
+        // Cleanup on unexpected/system exit
+        if (pollingInterval) {
+          window.clearInterval(pollingInterval);
+          pollingInterval = null;
+        }
+        globalBridge = null;
+        return;
+      }
 
       const now = Date.now();
+      const DEBOUNCE_MS = 500;
 
-      if (isScroll && now - lastPageTurn > 500) { // 500ms debounce
+      const isScroll = evtStr === '1' || evtStr === '2' || evtStr.includes('SCROLL');
+      // Single tap: eventType 0 (normalized to undefined sometimes by SDK), or CLICK_EVENT
+      const isSingleTap = eventType === 0 || eventType === undefined ||
+                          evtStr === '0' || evtStr === 'CLICK_EVENT' || evtStr === 'UNDEFINED';
+      // Double tap: eventType 3, or DOUBLE_CLICK_EVENT
+      const isDoubleTap = evtStr === '3' || evtStr.includes('DOUBLE_CLICK');
+
+      // --- Double-tap: system exit dialog on any page (required by review) ---
+      if (isDoubleTap && now - lastEventTime > DEBOUNCE_MS) {
+        lastEventTime = now;
+        bridge.shutDownPageContainer(1).catch(console.error);
+        return;
+      }
+
+      // --- Scroll: page navigation or month menu scroll ---
+      if (isScroll && now - lastEventTime > DEBOUNCE_MS) {
         const isUp = evtStr === '1' || evtStr.includes('SCROLL_TOP');
         
         if ((currentPage === 3 || currentPage === 4) && isMonthMenuOpen) {
-           // We are in the popup menu - scroll through months
-           if (isUp) {
-              menuMonthOffset = Math.max(0, menuMonthOffset - 1);
-           } else {
-              menuMonthOffset = Math.min(11, menuMonthOffset + 1);
-           }
-           updateHUD().catch(console.error);
+          // Scroll through months in the popup menu
+          if (isUp) {
+            menuMonthOffset = Math.max(0, menuMonthOffset - 1);
+          } else {
+            menuMonthOffset = Math.min(11, menuMonthOffset + 1);
+          }
+          updateHUD().catch(console.error);
         } else {
-           // Normal Page navigation
-           if (isUp) {
-             currentPage = (currentPage - 1 + 5) % 5; // Go back
-           } else {
-             currentPage = (currentPage + 1) % 5; // Go forward
-           }
-           updateHUD().catch(console.error);
+          // Normal page navigation
+          if (isUp) {
+            currentPage = (currentPage - 1 + 5) % 5;
+          } else {
+            currentPage = (currentPage + 1) % 5;
+          }
+          updateHUD().catch(console.error);
         }
-        lastPageTurn = now;
+        lastEventTime = now;
       }
-      
-      if (isDoubleTap && (currentPage === 3 || currentPage === 4) && now - lastPageTurn > 500) {
+
+      // --- Single tap on month pages: open/confirm month menu ---
+      if (isSingleTap && (currentPage === 3 || currentPage === 4) && now - lastEventTime > DEBOUNCE_MS) {
         if (!isMonthMenuOpen) {
-           // Open the menu
-           isMonthMenuOpen = true;
-           menuMonthOffset = currentMonthOffset;
-           updateHUD().catch(console.error);
+          // Open the menu
+          isMonthMenuOpen = true;
+          menuMonthOffset = currentMonthOffset;
+          updateHUD().catch(console.error);
         } else {
-           // Confirm selection and close menu
-           isMonthMenuOpen = false;
-           currentMonthOffset = menuMonthOffset;
-           updateHUD().catch(console.error);
-           
-           // Force an immediate API fetch rather than wait for the 3.5s interval
-           if (globalBridge && globalUpdateStatus && pvSystem) {
-             pollFronius(pvSystem.id, pvSystem.name, authHeaders, globalBridge, globalUpdateStatus).catch(console.error);
-           }
+          // Confirm selection and close menu
+          isMonthMenuOpen = false;
+          currentMonthOffset = menuMonthOffset;
+          updateHUD().catch(console.error);
+          // Force immediate API fetch
+          if (globalBridge && globalUpdateStatus && pvSystem) {
+            pollFronius(pvSystem.id, pvSystem.name, authHeaders, globalBridge, globalUpdateStatus).catch(console.error);
+          }
         }
-        lastPageTurn = now;
+        lastEventTime = now;
       }
     });
 
@@ -179,7 +222,7 @@ async function updateHUD() {
      if (isMonthMenuOpen) {
        // Generate the text menu instead of the data
        const today = new Date();
-       let menuStr = "Select month (Scroll, then Double-Tap)\n\n";
+       let menuStr = "Select month (Scroll, then Tap)\n\n";
        
        // Show 2 months before and 2 after the cursor, clamped to [0..11] range
        const startIdx = Math.max(0, menuMonthOffset - 2);
