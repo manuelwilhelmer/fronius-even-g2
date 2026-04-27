@@ -1,8 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell, Card, Button, Input, StatusDot, ScreenHeader, Loading } from 'even-toolkit/web';
-import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
+import { waitForEvenAppBridge, EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { initEvenG2App } from './g2/app';
+
+// Safe bridge getter: never caches a rejected promise.
+// Each call retries waitForEvenAppBridge() fresh if the previous attempt failed.
+let _bridgePromise: Promise<EvenAppBridge> | null = null;
+function getBridge(): Promise<EvenAppBridge> {
+  if (!_bridgePromise) {
+    _bridgePromise = waitForEvenAppBridge().catch((err) => {
+      _bridgePromise = null; // clear so next call retries
+      return Promise.reject(err);
+    });
+  }
+  return _bridgePromise;
+}
+
 
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -25,7 +39,7 @@ export default function App() {
       let savedPassword = localStorage.getItem('solarweb_password') || '';
 
       try {
-        const bridge = await waitForEvenAppBridge();
+        const bridge = await getBridge();
         const bridgeEmail = await bridge.getLocalStorage('solarweb_email');
         const bridgePass = await bridge.getLocalStorage('solarweb_password');
 
@@ -51,7 +65,7 @@ export default function App() {
     localStorage.setItem('solarweb_email', email);
     localStorage.setItem('solarweb_password', password);
     try {
-      const bridge = await waitForEvenAppBridge();
+      const bridge = await getBridge();
       await bridge.setLocalStorage('solarweb_email', email);
       await bridge.setLocalStorage('solarweb_password', password);
     } catch (e) {

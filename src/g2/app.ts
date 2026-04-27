@@ -24,10 +24,24 @@ const SW_BASE_URL = "https://swqapi.solarweb.com";
 const DEFAULT_ACCESSKEY_ID = "FKIAB4CDA71C0763413DA942DC756742318B";
 const DEFAULT_ACCESSKEY_VALUE = "67315e19-6805-479e-994d-7193ee5f6125";
 
+// Safe bridge getter: never caches a rejected promise.
+let _bridgePromise: Promise<EvenAppBridge> | null = null;
+function getBridge(): Promise<EvenAppBridge> {
+  if (!_bridgePromise) {
+    _bridgePromise = waitForEvenAppBridge().catch((err) => {
+      _bridgePromise = null; // clear so next call retries fresh
+      return Promise.reject(err);
+    });
+  }
+  return _bridgePromise;
+}
+
+
+
 export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
   globalUpdateStatus = updateStatus;
   try {
-    const bridge = await withTimeout(waitForEvenAppBridge(), 10000);
+    const bridge = await withTimeout(getBridge(), 10000);
     globalBridge = bridge;
 
     updateStatus('Bridge acquired. Initializing glasses layout...');
