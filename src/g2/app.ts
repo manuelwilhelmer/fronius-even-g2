@@ -24,25 +24,33 @@ const SW_BASE_URL = "https://swqapi.solarweb.com";
 const DEFAULT_ACCESSKEY_ID = "FKIAB4CDA71C0763413DA942DC756742318B";
 const DEFAULT_ACCESSKEY_VALUE = "67315e19-6805-479e-994d-7193ee5f6125";
 
-// Safe bridge getter: never caches a rejected promise.
-let _bridgePromise: Promise<EvenAppBridge> | null = null;
-function getBridge(): Promise<EvenAppBridge> {
-  if (!_bridgePromise) {
-    _bridgePromise = waitForEvenAppBridge().catch((err) => {
-      _bridgePromise = null; // clear so next call retries fresh
-      return Promise.reject(err);
-    });
+// Retry wrapper: calls waitForEvenAppBridge() up to maxAttempts times.
+// Each retry waits delayMs before trying again. This handles the SDK's internal
+// promise caching — after a failed attempt the SDK may need a moment to reset.
+async function acquireBridgeWithRetry(maxAttempts = 3, delayMs = 2000): Promise<EvenAppBridge> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const bridge = await waitForEvenAppBridge();
+      return bridge;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Bridge attempt ${attempt}/${maxAttempts} failed:`, err);
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
   }
-  return _bridgePromise;
+  throw lastError;
 }
-
-
 
 export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
   globalUpdateStatus = updateStatus;
   try {
-    const bridge = await withTimeout(getBridge(), 10000);
+    updateStatus('Connecting to Even Hub Bridge...');
+    const bridge = await acquireBridgeWithRetry(3, 2000);
     globalBridge = bridge;
+
 
     updateStatus('Bridge acquired. Initializing glasses layout...');
 
@@ -493,15 +501,3 @@ async function pollFronius(pvSystemId: string, pvSystemName: string, authHeaders
   }
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      reject(new Error(`Operation timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    promise
-      .then((value) => resolve(value))
-      .catch((error) => reject(error))
-      .finally(() => window.clearTimeout(timer));
-  });
-}

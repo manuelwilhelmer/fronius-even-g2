@@ -1,22 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell, Card, Button, Input, StatusDot, ScreenHeader, Loading } from 'even-toolkit/web';
-import { waitForEvenAppBridge, EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { initEvenG2App } from './g2/app';
-
-// Safe bridge getter: never caches a rejected promise.
-// Each call retries waitForEvenAppBridge() fresh if the previous attempt failed.
-let _bridgePromise: Promise<EvenAppBridge> | null = null;
-function getBridge(): Promise<EvenAppBridge> {
-  if (!_bridgePromise) {
-    _bridgePromise = waitForEvenAppBridge().catch((err) => {
-      _bridgePromise = null; // clear so next call retries
-      return Promise.reject(err);
-    });
-  }
-  return _bridgePromise;
-}
-
 
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -29,51 +14,33 @@ export default function App() {
   const isAutoConnecting = useRef(false);
 
   useEffect(() => {
-    // Keep translation strictly local so the initial status can translate
     setConnectionStatus(t('statusWaiting'));
   }, [t]);
 
   useEffect(() => {
-    const loadSavedData = async () => {
-      let savedEmail = localStorage.getItem('solarweb_email') || '';
-      let savedPassword = localStorage.getItem('solarweb_password') || '';
+    // Only use browser localStorage on startup — never call waitForEvenAppBridge() here.
+    // Calling it early (before the bridge is ready) poisons its internal cache and
+    // causes every subsequent call to fail immediately with a cached rejection.
+    const savedEmail = localStorage.getItem('solarweb_email') || '';
+    const savedPassword = localStorage.getItem('solarweb_password') || '';
 
-      try {
-        const bridge = await getBridge();
-        const bridgeEmail = await bridge.getLocalStorage('solarweb_email');
-        const bridgePass = await bridge.getLocalStorage('solarweb_password');
+    if (savedEmail) setEmail(savedEmail);
+    if (savedPassword) setPassword(savedPassword);
 
-        if (bridgeEmail) savedEmail = String(bridgeEmail);
-        if (bridgePass) savedPassword = String(bridgePass);
-      } catch (e) {
-        console.log('Bridge not available for loading local storage', e);
-      }
-
-      if (savedEmail) setEmail(savedEmail);
-      if (savedPassword) setPassword(savedPassword);
-
-      if (savedEmail && savedPassword && !isAutoConnecting.current) {
-        isAutoConnecting.current = true;
-        handleConnect(savedEmail, savedPassword);
-      }
-    };
-    
-    loadSavedData();
+    if (savedEmail && savedPassword && !isAutoConnecting.current) {
+      isAutoConnecting.current = true;
+      handleConnect(savedEmail, savedPassword);
+    }
   }, []);
 
   const handleSave = async () => {
+    // Persist to browser localStorage immediately (no bridge needed)
     localStorage.setItem('solarweb_email', email);
     localStorage.setItem('solarweb_password', password);
-    try {
-      const bridge = await getBridge();
-      await bridge.setLocalStorage('solarweb_email', email);
-      await bridge.setLocalStorage('solarweb_password', password);
-    } catch (e) {
-      console.log('Bridge not available for saving local storage', e);
-    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
+
 
   const handleConnect = async (overrideEmail?: string, overridePass?: string) => {
     // Determine which credentials to use (function arguments or component state)
