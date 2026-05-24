@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell, Card, Button, Input, StatusDot, ScreenHeader, Loading } from 'even-toolkit/web';
-import { initEvenG2App } from './g2/app';
+import { initEvenG2App, renderStartupScreen } from './g2/app';
 
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -18,9 +18,12 @@ export default function App() {
   }, [t]);
 
   useEffect(() => {
+    // Immediately render the startup screen on the glasses as soon as the
+    // app mounts — before any login/auth. This satisfies the Even Hub review
+    // requirement that the OS must render something right after app start.
+    renderStartupScreen();
+
     // Only use browser localStorage on startup — never call waitForEvenAppBridge() here.
-    // Calling it early (before the bridge is ready) poisons its internal cache and
-    // causes every subsequent call to fail immediately with a cached rejection.
     const savedEmail = localStorage.getItem('solarweb_email') || '';
     const savedPassword = localStorage.getItem('solarweb_password') || '';
 

@@ -44,17 +44,20 @@ async function acquireBridgeWithRetry(maxAttempts = 3, delayMs = 2000): Promise<
   throw lastError;
 }
 
-export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
-  globalUpdateStatus = updateStatus;
+// Track whether the startup container has already been created.
+// createStartUpPageContainer must only be called once per session.
+let startupScreenRendered = false;
+
+/**
+ * Call this immediately when the app mounts (before any login/auth).
+ * It acquires the bridge and renders the mandatory OS startup screen on the
+ * glasses right away — satisfying the Even Hub review requirement that the
+ * glasses must display something as soon as the app process starts.
+ */
+export async function renderStartupScreen(): Promise<void> {
+  if (startupScreenRendered) return;
   try {
-    updateStatus('Connecting to Even Hub Bridge...');
-    const bridge = await acquireBridgeWithRetry(3, 2000);
-    globalBridge = bridge;
-
-
-    updateStatus('Bridge acquired. Initializing glasses layout...');
-
-    // Immediately render a visible startup message so the OS process check passes
+    const bridge = await acquireBridgeWithRetry(1, 0); // single fast attempt
     await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
         containerTotalNum: 1,
@@ -69,12 +72,53 @@ export async function initEvenG2App(email: string, pass: string, updateStatus: (
             paddingLength: 4,
             containerID: CONTAINER_ID,
             containerName: 'fronius-data',
-            content: 'Fronius Solar.web started, please continue on phone.',
+            content: 'Fronius Solar.web started,\nplease continue on phone.',
             isEventCapture: 1,
           })
         ]
       })
     );
+    startupScreenRendered = true;
+    console.log('Startup screen rendered on glasses.');
+  } catch (e) {
+    // Bridge not yet available (e.g. browser/dev mode) — silently ignore.
+    console.log('Startup screen skipped (bridge not available):', e);
+  }
+}
+
+export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
+  globalUpdateStatus = updateStatus;
+  try {
+    updateStatus('Connecting to Even Hub Bridge...');
+    const bridge = await acquireBridgeWithRetry(3, 2000);
+    globalBridge = bridge;
+
+    updateStatus('Bridge acquired. Initializing glasses layout...');
+
+    // Only create the startup container if renderStartupScreen() hasn't done it yet.
+    if (!startupScreenRendered) {
+      await bridge.createStartUpPageContainer(
+        new CreateStartUpPageContainer({
+          containerTotalNum: 1,
+          textObject: [
+            new TextContainerProperty({
+              xPosition: 0,
+              yPosition: 0,
+              width: 576,
+              height: 288,
+              borderWidth: 0,
+              borderColor: 0,
+              paddingLength: 4,
+              containerID: CONTAINER_ID,
+              containerName: 'fronius-data',
+              content: 'Fronius Solar.web started,\nplease continue on phone.',
+              isEventCapture: 1,
+            })
+          ]
+        })
+      );
+      startupScreenRendered = true;
+    }
 
     updateStatus('Authenticating with Solar.web...');
     const authHeaders = await loginSolarWeb(email, pass);
