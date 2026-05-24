@@ -10,5 +10,17 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    proxy: {
+      '/api/solarweb': {
+        target: 'https://swqapi.solarweb.com',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api\/solarweb/, ''),
+        headers: {
+          'Origin': 'https://swqapi.solarweb.com',
+          'Referer': 'https://swqapi.solarweb.com/'
+        }
+      }
+    }
   },
 })

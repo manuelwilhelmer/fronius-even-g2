@@ -18,10 +18,10 @@ export default function App() {
   }, [t]);
 
   useEffect(() => {
-    // Immediately render the startup screen on the glasses as soon as the
-    // app mounts — before any login/auth. This satisfies the Even Hub review
-    // requirement that the OS must render something right after app start.
-    renderStartupScreen();
+    // Delay the startup screen render slightly so the simulator/bridge has time
+    // to connect before we call waitForEvenAppBridge(). An immediate call would
+    // poison the SDK's internal promise cache if the bridge isn't ready yet.
+    const t = setTimeout(() => renderStartupScreen(), 1000);
 
     // Only use browser localStorage on startup — never call waitForEvenAppBridge() here.
     const savedEmail = localStorage.getItem('solarweb_email') || '';
@@ -34,6 +34,8 @@ export default function App() {
       isAutoConnecting.current = true;
       handleConnect(savedEmail, savedPassword);
     }
+
+    return () => clearTimeout(t);
   }, []);
 
   const handleSave = async () => {
@@ -58,14 +60,14 @@ export default function App() {
     setIsConnecting(true);
     setConnectionStatus(t('statusConnecting'));
     try {
-      // Reduced delay for faster autonomous background execution
-      await new Promise(resolve => setTimeout(resolve, 500));
       await initEvenG2App(e, p, setConnectionStatus);
       setIsConnected(true);
       setConnectionStatus(t('statusConnected'));
-    } catch (err) {
-      console.error(err);
-      setConnectionStatus(t('statusError'));
+    } catch (err: any) {
+      console.error('Connection error:', err);
+      // Show the real error so we can distinguish bridge vs. auth failures
+      const msg = err?.message || String(err);
+      setConnectionStatus(`Error: ${msg}`);
       setIsConnected(false);
     } finally {
       setIsConnecting(false);

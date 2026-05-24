@@ -20,7 +20,7 @@ let globalBridge: EvenAppBridge | null = null;
 let globalUpdateStatus: ((s: string) => void) | null = null;
 
 const CONTAINER_ID = 1;
-const SW_BASE_URL = "https://swqapi.solarweb.com";
+const SW_BASE_URL = import.meta.env.DEV ? "/api/solarweb" : "https://swqapi.solarweb.com";
 const DEFAULT_ACCESSKEY_ID = "FKIAB4CDA71C0763413DA942DC756742318B";
 const DEFAULT_ACCESSKEY_VALUE = "67315e19-6805-479e-994d-7193ee5f6125";
 
