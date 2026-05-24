@@ -2,7 +2,7 @@
   "name": "Fronius Solar",
   "name_zh": "Fronius Solar",
   "package_id": "com.fronius.solar",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "edition": "202601",
   "min_app_version": "1.0.0",
   "min_sdk_version": "0.0.10",
@@ -15,7 +15,7 @@
     {
       "name": "network",
       "desc": "Required to fetch Solar.web API data",
-      "whitelist": ["https://swqapi.solarweb.com"]
+      "whitelist": ["https://swqapi.solarweb.com", "https://fronius-cors-proxy.manuel-proxy-6960.workers.dev"]
     }
   ],
   "supported_languages": [
