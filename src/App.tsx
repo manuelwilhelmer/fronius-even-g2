@@ -47,13 +47,7 @@ export default function App() {
     // Delay startup screen render so bridge has time to connect
     const timer = setTimeout(() => renderStartupScreen(), 1000);
 
-    // Only pre-fill and auto-connect if user explicitly saved credentials before
-    const hasSaved = localStorage.getItem('solarweb_saved') === 'true';
-    if (!hasSaved) {
-      return () => clearTimeout(timer);
-    }
-
-    // Load saved credentials from bridge storage (falls back to localStorage)
+    // Pre-fill fields and auto-connect if credentials exist in storage
     loadCredentials().then(({ email: savedEmail, pass: savedPassword }) => {
       if (savedEmail) setEmail(savedEmail);
       if (savedPassword) setPassword(savedPassword);
