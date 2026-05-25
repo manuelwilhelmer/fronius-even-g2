@@ -113,13 +113,36 @@ export async function renderStartupScreen(): Promise<void> {
     startupScreenRendered = true;
     console.log('Startup screen rendered on glasses.');
 
-    // If credentials are saved, auto-connect directly — no phone interaction needed
+    // If credentials are saved, auto-connect — pass the already-acquired bridge
+    // so initEvenG2App does NOT need to acquire it again (avoids SDK cache issues)
     if (hasCredentials) {
+      const updateGlasses = async (text: string) => {
+        try {
+          await bridge.textContainerUpgrade(
+            new TextContainerUpgrade({
+              containerID: CONTAINER_ID,
+              containerName: 'fronius-data',
+              content: text,
+            })
+          );
+        } catch (_) {}
+      };
+
       initEvenG2App(savedEmail, savedPassword, (status) => {
         console.log('[auto-connect]', status);
         globalUpdateStatus?.(status);
-      }).catch((err) => {
+      }, bridge).catch(async (err) => {
         console.warn('[auto-connect] failed:', err);
+        await updateGlasses('Fronius Solar.web\nConnect failed.\nOpen phone app.');
+        // Retry once after 8 seconds
+        await new Promise(r => setTimeout(r, 8000));
+        initEvenG2App(savedEmail, savedPassword, (status) => {
+          console.log('[auto-connect retry]', status);
+          globalUpdateStatus?.(status);
+        }, bridge).catch((e2) => {
+          console.warn('[auto-connect retry] failed:', e2);
+          updateGlasses('Fronius Solar.web\nAuto-connect failed.\nOpen phone app.');
+        });
       });
     }
   } catch (e) {
@@ -168,11 +191,17 @@ export async function loadCredentials(): Promise<{email: string, pass: string}> 
   return { email, pass };
 }
 
-export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
+export async function initEvenG2App(
+  email: string,
+  pass: string,
+  updateStatus: (s: string) => void,
+  existingBridge?: EvenAppBridge
+) {
   globalUpdateStatus = updateStatus;
   try {
     updateStatus('Connecting to Even Hub Bridge...');
-    const bridge = await acquireBridgeWithRetry(3, 2000);
+    // Use pre-acquired bridge if provided (avoids double SDK acquisition after restarts)
+    const bridge = existingBridge ?? await acquireBridgeWithRetry(3, 2000);
     globalBridge = bridge;
 
     updateStatus('Bridge acquired. Initializing glasses layout...');
