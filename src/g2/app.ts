@@ -59,10 +59,31 @@ export async function renderStartupScreen(): Promise<void> {
   try {
     const bridge = await acquireBridgeWithRetry(1, 0); // single fast attempt
 
-    // Check if user previously saved credentials
-    const hasSaved = localStorage.getItem('solarweb_saved') === 'true';
-    const savedEmail = localStorage.getItem('solarweb_email') || '';
-    const savedPassword = localStorage.getItem('solarweb_password') || '';
+    // Load credentials from the bridge's persistent KV store (survives WebView restarts).
+    // Fall back to browser localStorage if bridge storage returns nothing.
+    let savedEmail = '';
+    let savedPassword = '';
+    let hasSaved = false;
+    try {
+      if (typeof bridge.getLocalStorage === 'function') {
+        const bEmail = await bridge.getLocalStorage('solarweb_email');
+        const bPass  = await bridge.getLocalStorage('solarweb_password');
+        const bSaved = await bridge.getLocalStorage('solarweb_saved');
+        if (bEmail) savedEmail = bEmail;
+        if (bPass)  savedPassword = bPass;
+        if (bSaved === 'true') hasSaved = true;
+        // Mirror into browser localStorage so App.tsx can also read them
+        if (savedEmail)   localStorage.setItem('solarweb_email', savedEmail);
+        if (savedPassword) localStorage.setItem('solarweb_password', savedPassword);
+        if (hasSaved)     localStorage.setItem('solarweb_saved', 'true');
+      }
+    } catch (_) { /* ignore KV errors */ }
+
+    // Fallback: browser localStorage (works in simulator / first run)
+    if (!savedEmail)   savedEmail    = localStorage.getItem('solarweb_email') || '';
+    if (!savedPassword) savedPassword = localStorage.getItem('solarweb_password') || '';
+    if (!hasSaved)     hasSaved      = localStorage.getItem('solarweb_saved') === 'true';
+
     const hasCredentials = hasSaved && !!savedEmail && !!savedPassword;
 
     const initialText = hasCredentials
@@ -111,12 +132,14 @@ export async function saveCredentials(email: string, pass: string): Promise<void
   // Always save to browser localStorage as primary storage
   localStorage.setItem('solarweb_email', email);
   localStorage.setItem('solarweb_password', pass);
-  // Also try to save to the Even bridge's persistent key-value store
+  localStorage.setItem('solarweb_saved', 'true');
+  // Also save to the Even bridge's persistent KV store (survives WebView restarts)
   try {
     const bridge = await acquireBridgeWithRetry();
     if (typeof bridge.setLocalStorage === 'function') {
       await bridge.setLocalStorage('solarweb_email', email);
       await bridge.setLocalStorage('solarweb_password', pass);
+      await bridge.setLocalStorage('solarweb_saved', 'true');
     }
   } catch (err) {
     console.warn("Could not save to bridge storage:", err);
