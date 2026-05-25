@@ -58,6 +58,17 @@ export async function renderStartupScreen(): Promise<void> {
   if (startupScreenRendered) return;
   try {
     const bridge = await acquireBridgeWithRetry(1, 0); // single fast attempt
+
+    // Check if user previously saved credentials
+    const hasSaved = localStorage.getItem('solarweb_saved') === 'true';
+    const savedEmail = localStorage.getItem('solarweb_email') || '';
+    const savedPassword = localStorage.getItem('solarweb_password') || '';
+    const hasCredentials = hasSaved && !!savedEmail && !!savedPassword;
+
+    const initialText = hasCredentials
+      ? 'Fronius Solar.web\nConnecting...'
+      : 'Fronius Solar.web started,\nplease continue on phone.';
+
     await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
         containerTotalNum: 1,
@@ -72,7 +83,7 @@ export async function renderStartupScreen(): Promise<void> {
             paddingLength: 4,
             containerID: CONTAINER_ID,
             containerName: 'fronius-data',
-            content: 'Fronius Solar.web started,\nplease continue on phone.',
+            content: initialText,
             isEventCapture: 1,
           })
         ]
@@ -80,6 +91,16 @@ export async function renderStartupScreen(): Promise<void> {
     );
     startupScreenRendered = true;
     console.log('Startup screen rendered on glasses.');
+
+    // If credentials are saved, auto-connect directly — no phone interaction needed
+    if (hasCredentials) {
+      initEvenG2App(savedEmail, savedPassword, (status) => {
+        console.log('[auto-connect]', status);
+        globalUpdateStatus?.(status);
+      }).catch((err) => {
+        console.warn('[auto-connect] failed:', err);
+      });
+    }
   } catch (e) {
     // Bridge not yet available (e.g. browser/dev mode) — silently ignore.
     console.log('Startup screen skipped (bridge not available):', e);

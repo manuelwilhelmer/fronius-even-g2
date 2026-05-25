@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell, Card, Button, Input, StatusDot, ScreenHeader, Loading } from 'even-toolkit/web';
 import { initEvenG2App, renderStartupScreen, saveCredentials, loadCredentials } from './g2/app';
@@ -17,11 +17,41 @@ export default function App() {
     setConnectionStatus(t('statusWaiting'));
   }, [t]);
 
+  // handleConnect defined with useCallback so it can be referenced in useEffect below
+  const handleConnect = useCallback(async (overrideEmail?: string, overridePass?: string) => {
+    const e = typeof overrideEmail === 'string' ? overrideEmail : email;
+    const p = typeof overridePass === 'string' ? overridePass : password;
+
+    if (!e || !p) {
+      setConnectionStatus(t('statusEmpty'));
+      return;
+    }
+
+    setIsConnecting(true);
+    setConnectionStatus(t('statusConnecting'));
+    try {
+      await initEvenG2App(e, p, setConnectionStatus);
+      setIsConnected(true);
+      setConnectionStatus(t('statusConnected'));
+    } catch (err: any) {
+      console.error('Connection error:', err);
+      const msg = err?.message || String(err);
+      setConnectionStatus(`Error: ${msg}`);
+      setIsConnected(false);
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [email, password, t]);
+
   useEffect(() => {
-    // Delay the startup screen render slightly so the simulator/bridge has time
-    // to connect before we call waitForEvenAppBridge(). An immediate call would
-    // poison the SDK's internal promise cache if the bridge isn't ready yet.
+    // Delay startup screen render so bridge has time to connect
     const timer = setTimeout(() => renderStartupScreen(), 1000);
+
+    // Only pre-fill and auto-connect if user explicitly saved credentials before
+    const hasSaved = localStorage.getItem('solarweb_saved') === 'true';
+    if (!hasSaved) {
+      return () => clearTimeout(timer);
+    }
 
     // Load saved credentials from bridge storage (falls back to localStorage)
     loadCredentials().then(({ email: savedEmail, pass: savedPassword }) => {
@@ -44,41 +74,14 @@ export default function App() {
     });
 
     return () => clearTimeout(timer);
-  }, []);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async () => {
-    // Persist to both browser localStorage and the Even bridge's key-value store
+    // Persist credentials and mark them as explicitly saved
     await saveCredentials(email, password);
+    localStorage.setItem('solarweb_saved', 'true');
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  };
-
-
-  const handleConnect = async (overrideEmail?: string, overridePass?: string) => {
-    // Determine which credentials to use (function arguments or component state)
-    const e = typeof overrideEmail === 'string' ? overrideEmail : email;
-    const p = typeof overridePass === 'string' ? overridePass : password;
-    
-    if (!e || !p) {
-      setConnectionStatus(t('statusEmpty'));
-      return;
-    }
-    
-    setIsConnecting(true);
-    setConnectionStatus(t('statusConnecting'));
-    try {
-      await initEvenG2App(e, p, setConnectionStatus);
-      setIsConnected(true);
-      setConnectionStatus(t('statusConnected'));
-    } catch (err: any) {
-      console.error('Connection error:', err);
-      // Show the real error so we can distinguish bridge vs. auth failures
-      const msg = err?.message || String(err);
-      setConnectionStatus(`Error: ${msg}`);
-      setIsConnected(false);
-    } finally {
-      setIsConnecting(false);
-    }
   };
 
   const changeLanguage = (lng: string) => {
