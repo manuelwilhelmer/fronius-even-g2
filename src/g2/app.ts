@@ -57,7 +57,8 @@ let startupScreenRendered = false;
 export async function renderStartupScreen(): Promise<void> {
   if (startupScreenRendered) return;
   try {
-    const bridge = await acquireBridgeWithRetry(1, 0); // single fast attempt
+    // Give the bridge more time to be ready after a restart (3 attempts, 2s apart)
+    const bridge = await acquireBridgeWithRetry(3, 2000);
 
     // Load credentials from the bridge's persistent KV store (survives WebView restarts).
     // Fall back to browser localStorage if bridge storage returns nothing.
@@ -88,7 +89,7 @@ export async function renderStartupScreen(): Promise<void> {
 
     const initialText = hasCredentials
       ? 'Fronius Solar.web\nConnecting...'
-      : 'Fronius Solar.web started,\nplease continue on phone.';
+      : 'Fronius Solar.web\nOpen phone app to continue.';
 
     await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
@@ -113,8 +114,8 @@ export async function renderStartupScreen(): Promise<void> {
     startupScreenRendered = true;
     console.log('Startup screen rendered on glasses.');
 
-    // If credentials are saved, auto-connect — pass the already-acquired bridge
-    // so initEvenG2App does NOT need to acquire it again (avoids SDK cache issues)
+    // If credentials are saved: keep retrying until connected. Never give up.
+    // Pass the already-acquired bridge so initEvenG2App skips a second acquisition.
     if (hasCredentials) {
       const updateGlasses = async (text: string) => {
         try {
@@ -128,22 +129,32 @@ export async function renderStartupScreen(): Promise<void> {
         } catch (_) {}
       };
 
-      initEvenG2App(savedEmail, savedPassword, (status) => {
-        console.log('[auto-connect]', status);
-        globalUpdateStatus?.(status);
-      }, bridge).catch(async (err) => {
-        console.warn('[auto-connect] failed:', err);
-        await updateGlasses('Fronius Solar.web\nConnect failed.\nOpen phone app.');
-        // Retry once after 8 seconds
-        await new Promise(r => setTimeout(r, 8000));
-        initEvenG2App(savedEmail, savedPassword, (status) => {
-          console.log('[auto-connect retry]', status);
-          globalUpdateStatus?.(status);
-        }, bridge).catch((e2) => {
-          console.warn('[auto-connect retry] failed:', e2);
-          updateGlasses('Fronius Solar.web\nAuto-connect failed.\nOpen phone app.');
-        });
-      });
+      const autoConnectLoop = async () => {
+        let attempt = 0;
+        while (true) {
+          attempt++;
+          console.log(`[auto-connect] attempt ${attempt}`);
+          if (attempt > 1) {
+            await updateGlasses(`Fronius Solar.web\nConnecting...`);
+          }
+          try {
+            await initEvenG2App(savedEmail, savedPassword, (status) => {
+              console.log('[auto-connect]', status);
+              globalUpdateStatus?.(status);
+            }, bridge);
+            // Success — exit loop
+            console.log('[auto-connect] connected successfully.');
+            return;
+          } catch (err) {
+            console.warn(`[auto-connect] attempt ${attempt} failed:`, err);
+            // Wait 20 seconds before retrying — network may not be ready yet
+            await updateGlasses(`Fronius Solar.web\nRetrying in 20s...`);
+            await new Promise(r => setTimeout(r, 20000));
+          }
+        }
+      };
+
+      autoConnectLoop(); // fire-and-forget, runs in background
     }
   } catch (e) {
     // Bridge not yet available (e.g. browser/dev mode) — silently ignore.
