@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell, Card, Button, Input, StatusDot, ScreenHeader, Loading } from 'even-toolkit/web';
-import { initEvenG2App, renderStartupScreen } from './g2/app';
+import { initEvenG2App, renderStartupScreen, saveCredentials, loadCredentials } from './g2/app';
 
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -21,27 +21,34 @@ export default function App() {
     // Delay the startup screen render slightly so the simulator/bridge has time
     // to connect before we call waitForEvenAppBridge(). An immediate call would
     // poison the SDK's internal promise cache if the bridge isn't ready yet.
-    const t = setTimeout(() => renderStartupScreen(), 1000);
+    const timer = setTimeout(() => renderStartupScreen(), 1000);
 
-    // Only use browser localStorage on startup — never call waitForEvenAppBridge() here.
-    const savedEmail = localStorage.getItem('solarweb_email') || '';
-    const savedPassword = localStorage.getItem('solarweb_password') || '';
+    // Load saved credentials from bridge storage (falls back to localStorage)
+    loadCredentials().then(({ email: savedEmail, pass: savedPassword }) => {
+      if (savedEmail) setEmail(savedEmail);
+      if (savedPassword) setPassword(savedPassword);
+      if (savedEmail && savedPassword && !isAutoConnecting.current) {
+        isAutoConnecting.current = true;
+        handleConnect(savedEmail, savedPassword);
+      }
+    }).catch(() => {
+      // Fallback: try browser localStorage directly
+      const savedEmail = localStorage.getItem('solarweb_email') || '';
+      const savedPassword = localStorage.getItem('solarweb_password') || '';
+      if (savedEmail) setEmail(savedEmail);
+      if (savedPassword) setPassword(savedPassword);
+      if (savedEmail && savedPassword && !isAutoConnecting.current) {
+        isAutoConnecting.current = true;
+        handleConnect(savedEmail, savedPassword);
+      }
+    });
 
-    if (savedEmail) setEmail(savedEmail);
-    if (savedPassword) setPassword(savedPassword);
-
-    if (savedEmail && savedPassword && !isAutoConnecting.current) {
-      isAutoConnecting.current = true;
-      handleConnect(savedEmail, savedPassword);
-    }
-
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleSave = async () => {
-    // Persist to browser localStorage immediately (no bridge needed)
-    localStorage.setItem('solarweb_email', email);
-    localStorage.setItem('solarweb_password', password);
+    // Persist to both browser localStorage and the Even bridge's key-value store
+    await saveCredentials(email, password);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };

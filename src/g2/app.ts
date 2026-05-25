@@ -86,6 +86,44 @@ export async function renderStartupScreen(): Promise<void> {
   }
 }
 
+export async function saveCredentials(email: string, pass: string): Promise<void> {
+  // Always save to browser localStorage as primary storage
+  localStorage.setItem('solarweb_email', email);
+  localStorage.setItem('solarweb_password', pass);
+  // Also try to save to the Even bridge's persistent key-value store
+  try {
+    const bridge = await acquireBridgeWithRetry();
+    if (typeof bridge.setLocalStorage === 'function') {
+      await bridge.setLocalStorage('solarweb_email', email);
+      await bridge.setLocalStorage('solarweb_password', pass);
+    }
+  } catch (err) {
+    console.warn("Could not save to bridge storage:", err);
+  }
+}
+
+export async function loadCredentials(): Promise<{email: string, pass: string}> {
+  // Start with browser localStorage as fallback
+  let email = localStorage.getItem('solarweb_email') || '';
+  let pass = localStorage.getItem('solarweb_password') || '';
+  // Try to load from the Even bridge's persistent key-value store (preferred)
+  try {
+    const bridge = await acquireBridgeWithRetry();
+    if (typeof bridge.getLocalStorage === 'function') {
+      const bEmail = await bridge.getLocalStorage('solarweb_email');
+      const bPass = await bridge.getLocalStorage('solarweb_password');
+      if (bEmail) email = bEmail;
+      if (bPass) pass = bPass;
+      // Mirror back to browser localStorage for consistency
+      if (email) localStorage.setItem('solarweb_email', email);
+      if (pass) localStorage.setItem('solarweb_password', pass);
+    }
+  } catch (err) {
+    console.warn("Could not load from bridge storage:", err);
+  }
+  return { email, pass };
+}
+
 export async function initEvenG2App(email: string, pass: string, updateStatus: (s: string) => void) {
   globalUpdateStatus = updateStatus;
   try {
