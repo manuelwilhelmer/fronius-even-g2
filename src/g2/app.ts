@@ -7,8 +7,8 @@ import {
 } from '@evenrealities/even_hub_sdk';
 
 let pollingInterval: number | null = null;
-let currentPage = 0; // 0 = Live, 1 = Daily Prod, 2 = Daily Cons, 3 = Monthly Prod, 4 = Monthly Cons
-let currentMonthOffset = 0; // 0 = Current month, 1 = Last month, etc. (up to 11)
+let currentPage = 0;
+let currentMonthOffset = 0;
 let isMonthMenuOpen = false;
 let menuMonthOffset = 0;
 let renderLive = 'Connected to Solar.web!\nWaiting for live data...';
@@ -18,6 +18,9 @@ let renderMonthly = 'Connected to Solar.web!\nWaiting for monthly production...'
 let renderMonthlyCon = 'Connected to Solar.web!\nWaiting for monthly consumption...';
 let globalBridge: EvenAppBridge | null = null;
 let globalUpdateStatus: ((s: string) => void) | null = null;
+let isConnecting = false;
+let eventListenerRegistered = false;
+let lastEventTime = 0; // module-level since handler is registered only once
 
 const CONTAINER_ID = 1;
 const SW_BASE_URL = "https://fronius-cors-proxy.manuel-proxy-6960.workers.dev"; // Cloudflare CORS Proxy
@@ -210,16 +213,24 @@ export async function initEvenG2App(
   updateStatus: (s: string) => void,
   existingBridge?: EvenAppBridge
 ) {
+  // Prevent concurrent calls — fixes call stack overflow from multiple event handler registrations
+  if (isConnecting) {
+    console.warn('[initEvenG2App] already connecting, skipping duplicate call');
+    return;
+  }
+  isConnecting = true;
   globalUpdateStatus = updateStatus;
   try {
     updateStatus('Connecting to Even Hub Bridge...');
-    // Use pre-acquired bridge if provided (avoids double SDK acquisition after restarts)
     const bridge = existingBridge ?? await acquireBridgeWithRetry(3, 2000);
     globalBridge = bridge;
 
     updateStatus('Bridge acquired. Initializing glasses layout...');
 
     // Only create the startup container if renderStartupScreen() hasn't done it yet.
+    // When called from renderStartupScreen the container already exists.
+    // When called directly (e.g. from App.tsx with no prior startup screen),
+    // show "Connecting..." — NEVER "please continue on phone" here.
     if (!startupScreenRendered) {
       await bridge.createStartUpPageContainer(
         new CreateStartUpPageContainer({
@@ -235,7 +246,7 @@ export async function initEvenG2App(
               paddingLength: 4,
               containerID: CONTAINER_ID,
               containerName: 'fronius-data',
-              content: 'Fronius Solar.web started,\nplease continue on phone.',
+              content: 'Fronius Solar.web\nConnecting...',
               isEventCapture: 1,
             })
           ]
@@ -253,13 +264,14 @@ export async function initEvenG2App(
       throw new Error("No PV System found on this account.");
     }
 
-    // Listen for gestures to switch pages
-    let lastEventTime = 0;
-    bridge.onEvenHubEvent((event: any) => {
-      console.log('EvenHubEvent received:', JSON.stringify(event));
+    // Listen for gestures — register only ONCE per session to avoid handler buildup
+    if (!eventListenerRegistered) {
+      eventListenerRegistered = true;
+      bridge.onEvenHubEvent((event: any) => {
+        console.log('EvenHubEvent received:', JSON.stringify(event));
       
-      const eventType = event.textEvent?.eventType ?? event.listEvent?.eventType ?? event.sysEvent?.eventType;
-      const evtStr = String(eventType).toUpperCase();
+        const eventType = event.textEvent?.eventType ?? event.listEvent?.eventType ?? event.sysEvent?.eventType;
+        const evtStr = String(eventType).toUpperCase();
 
       // --- Lifecycle events ---
       if (evtStr.includes('FOREGROUND_EXIT') || evtStr === '5') {
@@ -349,8 +361,9 @@ export async function initEvenG2App(
           }
         }
         lastEventTime = now;
-      }
-    });
+        }
+      }); // end bridge.onEvenHubEvent
+    } // end if (!eventListenerRegistered)
 
     if (pollingInterval) window.clearInterval(pollingInterval);
     
@@ -362,6 +375,8 @@ export async function initEvenG2App(
   } catch (error) {
     console.error('Failed to init Even G2:', error);
     throw error;
+  } finally {
+    isConnecting = false;
   }
 }
 
