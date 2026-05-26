@@ -63,8 +63,8 @@ export async function renderStartupScreen(): Promise<void> {
     // Give bridge time to be ready after a restart
     const bridge = await acquireBridgeWithRetry(3, 2000);
 
-    // Show "Connecting..." immediately — don't wait for credential check.
-    // This satisfies the Even Hub review requirement and avoids timing issues.
+    // Always start with "Open phone app to continue" — clear and unambiguous.
+    // If credentials are saved, the text will switch to "Connecting..." automatically.
     await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
         containerTotalNum: 1,
@@ -79,7 +79,7 @@ export async function renderStartupScreen(): Promise<void> {
             paddingLength: 4,
             containerID: CONTAINER_ID,
             containerName: 'fronius-data',
-            content: 'Fronius Solar.web\nConnecting...',
+            content: 'Fronius Solar.web\nOpen phone app to continue.',
             isEventCapture: 1,
           })
         ]
@@ -119,7 +119,6 @@ export async function renderStartupScreen(): Promise<void> {
         if (!email) email = localStorage.getItem('solarweb_email') || '';
         if (!pass)  pass  = localStorage.getItem('solarweb_password') || '';
         if (email && pass) {
-          // Mirror back into localStorage for App.tsx
           localStorage.setItem('solarweb_email', email);
           localStorage.setItem('solarweb_password', pass);
           return { email, pass };
@@ -132,8 +131,7 @@ export async function renderStartupScreen(): Promise<void> {
     const hasCredentials = !!savedEmail && !!savedPassword;
 
     if (!hasCredentials) {
-      // No credentials saved — this is a first-time setup
-      await updateGlasses('Fronius Solar.web\nOpen phone app to continue.');
+      // No credentials — keep "Open phone app to continue" as-is
       return;
     }
 
@@ -145,17 +143,15 @@ export async function renderStartupScreen(): Promise<void> {
         console.log(`[auto-connect] attempt ${attempt}`);
         await updateGlasses('Fronius Solar.web\nConnecting...');
         try {
-          // Let initEvenG2App acquire its own fresh bridge each attempt
-          // (avoids passing a potentially stale bridge object)
           await initEvenG2App(savedEmail, savedPassword, (status) => {
             console.log('[auto-connect]', status);
             globalUpdateStatus?.(status);
           });
           console.log('[auto-connect] connected successfully.');
-          return; // Exit loop on success
+          return;
         } catch (err) {
           console.warn(`[auto-connect] attempt ${attempt} failed:`, err);
-          await updateGlasses(`Fronius Solar.web\nRetrying in 30s...`);
+          await updateGlasses('Fronius Solar.web\nOpen phone app to continue.');
           await new Promise(r => setTimeout(r, 30000));
         }
       }
@@ -166,7 +162,6 @@ export async function renderStartupScreen(): Promise<void> {
     console.log('Startup screen skipped (bridge not available):', e);
   }
 }
-
 
 
 export async function saveCredentials(email: string, pass: string): Promise<void> {
